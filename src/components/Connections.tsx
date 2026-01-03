@@ -452,7 +452,7 @@ export function Connections() {
         <motion.button
           initial={{ scale: 0.9, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
-          className="fixed top-4 right-20 z-[100] bg-blue-500 text-white px-3 py-2 rounded-lg 
+          className="fixed top-4 right-20 z-[100000] bg-blue-500 text-white px-3 py-2 rounded-lg 
                    shadow-lg flex items-center gap-2 hover:bg-blue-600 transition-colors pointer-events-auto"
           onClick={() => {
             if (selectedItems.length === 2) {
