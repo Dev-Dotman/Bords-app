@@ -73,8 +73,8 @@ function LoginContent() {
       }
 
       toast.success('Login successful!')
-      router.push('/')
-      router.refresh()
+      // Use window.location for full page reload to ensure session is established
+      window.location.href = '/'
     } catch (error) {
       toast.error('An error occurred. Please try again.')
       setIsLoading(false)

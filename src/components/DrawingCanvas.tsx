@@ -69,7 +69,15 @@ export function DrawingCanvas() {
   
   const isDark = useThemeStore((state) => state.isDark)
   const currentBoardId = useBoardStore((state) => state.currentBoardId)
+  const currentBoard = useBoardStore((state) => 
+    state.boards.find(board => board.id === currentBoardId)
+  )
   const addItemToBoard = useBoardStore((state) => state.addItemToBoard)
+
+  // Filter drawings by current board
+  const boardDrawings = drawings.filter(drawing => 
+    currentBoard?.drawings?.includes(drawing.id)
+  )
 
   // Initialize canvas
   useEffect(() => {
@@ -92,10 +100,10 @@ export function DrawingCanvas() {
     return () => window.removeEventListener('resize', resizeCanvas)
   }, [])
 
-  // Redraw when drawings change
+  // Redraw when board drawings change
   useEffect(() => {
     redrawAllPaths()
-  }, [drawings])
+  }, [boardDrawings])
 
   const redrawAllPaths = () => {
     const canvas = canvasRef.current
@@ -106,8 +114,8 @@ export function DrawingCanvas() {
 
     ctx.clearRect(0, 0, canvas.width, canvas.height)
     
-    // Redraw all saved drawings
-    drawings.forEach((drawing) => {
+    // Redraw all board drawings
+    boardDrawings.forEach((drawing) => {
       drawing.paths.forEach((path) => {
         if (path.points.length < 2) return
         
@@ -200,7 +208,7 @@ export function DrawingCanvas() {
     const eraserRadius = eraserWidth / 2
     let hasChanges = false
     
-    drawings.forEach((drawing) => {
+    boardDrawings.forEach((drawing) => {
       const updatedPaths = drawing.paths
         .map((path) => {
           // Filter out points that intersect with eraser
@@ -284,8 +292,8 @@ export function DrawingCanvas() {
 
     ctx.clearRect(0, 0, canvas.width, canvas.height)
     
-    // Clear all stored drawings
-    drawings.forEach(drawing => {
+    // Clear all board drawings
+    boardDrawings.forEach(drawing => {
       useDrawingStore.getState().deleteDrawing(drawing.id)
     })
   }
@@ -507,7 +515,7 @@ export function DrawingCanvas() {
                   e.stopPropagation()
                   undoLastDrawing()
                 }}
-                disabled={drawings.length === 0}
+                disabled={boardDrawings.length === 0}
                 className="w-full flex items-center justify-center gap-2 px-3 py-2 
                          bg-blue-500 hover:bg-blue-600 text-white rounded-lg 
                          transition-all text-sm font-medium disabled:opacity-40 
