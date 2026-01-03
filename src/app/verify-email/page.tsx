@@ -54,34 +54,15 @@ function VerifyEmailContent() {
   }, [searchParams])
 
   return (
-    <div className="fixed inset-0 bg-gradient-to-br from-blue-50 via-purple-50 to-pink-50 dark:from-zinc-900 dark:via-zinc-800 dark:to-zinc-900">
-      {/* Animated background blobs */}
-      <div className="absolute inset-0 overflow-hidden">
-        <motion.div
-          className="absolute -top-40 -right-40 w-80 h-80 bg-purple-300/30 rounded-full blur-3xl"
-          animate={{
-            scale: [1, 1.2, 1],
-            rotate: [0, 90, 0],
-          }}
-          transition={{
-            duration: 20,
-            repeat: Infinity,
-            ease: "linear"
-          }}
-        />
-        <motion.div
-          className="absolute -bottom-40 -left-40 w-80 h-80 bg-blue-300/30 rounded-full blur-3xl"
-          animate={{
-            scale: [1.2, 1, 1.2],
-            rotate: [0, -90, 0],
-          }}
-          transition={{
-            duration: 15,
-            repeat: Infinity,
-            ease: "linear"
-          }}
-        />
-      </div>
+    <div className="fixed inset-0 bg-black">
+      {/* Background Image */}
+      <div 
+        className="absolute inset-0 bg-cover bg-center opacity-10"
+        style={{ backgroundImage: 'url(/bord2.png)' }}
+      />
+      
+      {/* Semi-transparent blur overlay */}
+      <div className="absolute inset-0 backdrop-blur-[2px] bg-black/50" />
 
       <div className="relative flex items-center justify-center min-h-screen p-4">
         <motion.div
@@ -90,21 +71,21 @@ function VerifyEmailContent() {
           transition={{ duration: 0.5 }}
           className="w-full max-w-md"
         >
-          <div className="bg-white/80 dark:bg-zinc-800/80 backdrop-blur-xl rounded-3xl shadow-2xl border border-white/20 dark:border-zinc-700/50 p-8">
+          <div className="bg-white/20 backdrop-blur-xl rounded-2xl shadow-2xl p-8">
             <div className="text-center">
               {status === 'loading' && (
                 <>
                   <motion.div
                     animate={{ rotate: 360 }}
                     transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-                    className="w-16 h-16 mx-auto mb-4"
+                    className="w-16 h-16 mx-auto mb-6"
                   >
-                    <Loader2 className="w-16 h-16 text-blue-500" />
+                    <Loader2 className="w-16 h-16 text-blue-400" />
                   </motion.div>
-                  <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
+                  <h1 className="text-2xl font-semibold text-white mb-2 brand-font tracking-tight">
                     Verifying Your Email
                   </h1>
-                  <p className="text-gray-600 dark:text-gray-400">
+                  <p className="text-zinc-300 font-light">
                     Please wait while we verify your email address...
                   </p>
                 </>
@@ -116,19 +97,19 @@ function VerifyEmailContent() {
                     initial={{ scale: 0 }}
                     animate={{ scale: 1 }}
                     transition={{ type: "spring", stiffness: 200, delay: 0.2 }}
-                    className="w-16 h-16 bg-gradient-to-br from-green-500 to-emerald-600 rounded-2xl mx-auto mb-4 flex items-center justify-center"
+                    className="w-16 h-16 bg-green-500 rounded-xl mx-auto mb-6 flex items-center justify-center"
                   >
                     <CheckCircle className="w-8 h-8 text-white" />
                   </motion.div>
-                  <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
+                  <h1 className="text-2xl font-semibold text-white mb-2 brand-font tracking-tight">
                     Email Verified!
                   </h1>
-                  <p className="text-gray-600 dark:text-gray-400 mb-6">
+                  <p className="text-zinc-300 font-light mb-6">
                     {message}
                   </p>
                   <Link
                     href="/login"
-                    className="inline-block w-full py-3 bg-gradient-to-r from-blue-500 to-purple-600 text-white rounded-xl font-medium shadow-lg hover:shadow-xl transition-all"
+                    className="inline-block w-full py-4 bg-black hover:bg-zinc-900 text-white rounded-xl font-medium shadow-sm transition-all"
                   >
                     Continue to Login
                   </Link>
@@ -141,26 +122,26 @@ function VerifyEmailContent() {
                     initial={{ scale: 0 }}
                     animate={{ scale: 1 }}
                     transition={{ type: "spring", stiffness: 200, delay: 0.2 }}
-                    className="w-16 h-16 bg-gradient-to-br from-red-500 to-rose-600 rounded-2xl mx-auto mb-4 flex items-center justify-center"
+                    className="w-16 h-16 bg-red-500 rounded-xl mx-auto mb-6 flex items-center justify-center"
                   >
                     <XCircle className="w-8 h-8 text-white" />
                   </motion.div>
-                  <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
+                  <h1 className="text-2xl font-semibold text-white mb-2 brand-font tracking-tight">
                     Verification Failed
                   </h1>
-                  <p className="text-gray-600 dark:text-gray-400 mb-6">
+                  <p className="text-zinc-300 font-light mb-6">
                     {message}
                   </p>
                   <div className="flex flex-col gap-3">
                     <Link
                       href="/signup"
-                      className="w-full py-3 bg-gradient-to-r from-blue-500 to-purple-600 text-white rounded-xl font-medium shadow-lg hover:shadow-xl transition-all"
+                      className="w-full py-4 bg-black hover:bg-zinc-900 text-white rounded-xl font-medium shadow-sm transition-all"
                     >
                       Create New Account
                     </Link>
                     <Link
                       href="/login"
-                      className="w-full py-3 bg-white/50 dark:bg-zinc-900/50 border border-gray-300 dark:border-zinc-700 rounded-xl font-medium hover:bg-white dark:hover:bg-zinc-900 transition-all"
+                      className="w-full py-4 bg-white/10 hover:bg-white/20 border border-white/20 text-white rounded-xl font-medium transition-all"
                     >
                       Back to Login
                     </Link>
@@ -178,8 +159,8 @@ function VerifyEmailContent() {
 export default function VerifyEmailPage() {
   return (
     <Suspense fallback={
-      <div className="fixed inset-0 flex items-center justify-center bg-gradient-to-br from-blue-50 via-purple-50 to-pink-50">
-        <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
+      <div className="fixed inset-0 flex items-center justify-center bg-black">
+        <Loader2 className="w-8 h-8 animate-spin text-blue-400" />
       </div>
     }>
       <VerifyEmailContent />

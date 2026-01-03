@@ -10,33 +10,33 @@ import { useMediaStore } from '../store/mediaStore'
 import { useBoardStore } from '../store/boardStore'
 import { useConnectionLineStore } from '../store/connectionLineStore'
 
-const toolItems = [
-  { id: 1, icon: Image, label: "Custom Backgrounds", description: "Personalize your board" },
-  { id: 2, icon: Download, label: "Export Options", description: "Save as PDF or image" },
-  { id: 3, icon: Link2, label: "Media Links", description: "Add images & videos" },
-  { id: 4, icon: Presentation, label: "Presentation Mode", description: "Full-screen view" },
-  { id: 5, icon: GitBranch, label: "Connection Lines", description: "Customize line colors" },
-  { id: 6, icon: Tags, label: "Tags", description: "Organize & filter", comingSoon: true },
-  { id: 7, icon: Users, label: "Collaborate", description: "Multi-user editing", comingSoon: true },
-  { id: 8, icon: Command, label: "Commands", description: "Quick actions", comingSoon: true },
-  { id: 9, icon: Brain, label: "AI Helper", description: "Smart suggestions", comingSoon: true },
-  { id: 10, icon: Workflow, label: "Automations", description: "Custom triggers", comingSoon: true }
-]
-
 export function SideBar() {
   const [hoveredItem, setHoveredItem] = useState<number | null>(null);
   const isDark = useThemeStore((state) => state.isDark)
   const { isPresentationMode, togglePresentationMode } = usePresentationStore()
   const { openExportModal } = useExportStore()
   const { openMediaModal } = useMediaStore()
-  const { openBackgroundModal } = useBoardStore()
+  const { openBackgroundModal, currentBoardId } = useBoardStore()
   const { openModal: openConnectionLineModal } = useConnectionLineStore()
+
+  const toolItems = [
+    { id: 1, icon: Image, label: "Custom Backgrounds", description: !currentBoardId ? "Select/create a board to get started" : "Personalize your board", disabled: !currentBoardId },
+    { id: 2, icon: Download, label: "Export Options", description: !currentBoardId ? "Select/create a board to get started" : "Save as PDF or image (Experimental)", disabled: !currentBoardId, experimental: true },
+    { id: 3, icon: Link2, label: "Media Links", description: !currentBoardId ? "Select/create a board to get started" : "Add images & videos", disabled: !currentBoardId },
+    { id: 4, icon: Presentation, label: "Presentation Mode", description: !currentBoardId ? "Select/create a board to get started" : "Full-screen view", disabled: !currentBoardId },
+    { id: 5, icon: GitBranch, label: "Connection Lines", description: !currentBoardId ? "Select/create a board to get started" : "Customize line colors", disabled: !currentBoardId },
+    { id: 6, icon: Tags, label: "Tags", description: "Organize & filter", comingSoon: true },
+    { id: 7, icon: Users, label: "Collaborate", description: "Multi-user editing", comingSoon: true },
+    { id: 8, icon: Command, label: "Commands", description: "Quick actions", comingSoon: true },
+    { id: 9, icon: Brain, label: "AI Helper", description: "Smart suggestions", comingSoon: true },
+    { id: 10, icon: Workflow, label: "Automations", description: "Custom triggers", comingSoon: true }
+  ]
 
   if (isPresentationMode) return null
 
   const handleItemClick = async (itemId: number) => {
     const item = toolItems.find(i => i.id === itemId)
-    if (item?.comingSoon) return // Don't do anything for coming soon items
+    if (item?.comingSoon || item?.disabled) return // Don't do anything for coming soon or disabled items
     
     if (itemId === 1) { // Custom Backgrounds
       openBackgroundModal()
@@ -72,14 +72,16 @@ export function SideBar() {
         <div className="py-4 flex flex-col items-center gap-4">{toolItems.map((item) => (
             <button
               key={item.id}
-              className="group relative flex-shrink-0 transition-all duration-200 p-1 w-full"
+              className={`group relative flex-shrink-0 transition-all duration-200 p-1 w-full
+                ${item.disabled ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}`}
               onMouseEnter={() => setHoveredItem(item.id)}
               onMouseLeave={() => setHoveredItem(null)}
               onClick={() => handleItemClick(item.id)}
+              disabled={item.disabled}
             >
               <div className={`
                 flex items-center justify-center
-                ${hoveredItem === item.id ? 'scale-110' : 'hover:scale-105'}
+                ${hoveredItem === item.id && !item.disabled ? 'scale-110' : !item.disabled ? 'hover:scale-105' : ''}
                 transition-all duration-200
               `}>
                 <item.icon 
@@ -103,7 +105,14 @@ export function SideBar() {
                     : 'opacity-0 translate-x-2'}
                 `}
               >
-                <div className="font-medium mb-1">{item.label}</div>
+                <div className="font-medium mb-1">
+                  {item.label}
+                  {item.experimental && (
+                    <span className="ml-2 text-[10px] px-1.5 py-0.5 bg-amber-500/20 text-amber-300 rounded">
+                      EXPERIMENTAL
+                    </span>
+                  )}
+                </div>
                 <div className="text-zinc-400 text-[10px] leading-relaxed">
                   {item.comingSoon ? 'Coming Soon' : item.description}
                 </div>

@@ -53,12 +53,12 @@ export default function ForgotPasswordPage() {
         toast.success(data.message)
         
         // Show reset URL in development
-        if (data.resetUrl) {
-          console.log('Password Reset URL:', data.resetUrl)
-          toast.success('Check console for reset link (dev mode)', {
-            duration: 5000,
-          })
-        }
+        // if (data.resetUrl) {
+        //   console.log('Password Reset URL:', data.resetUrl)
+        //   toast.success('Check console for reset link (dev mode)', {
+        //     duration: 5000,
+        //   })
+        // }
       } else {
         toast.error(data.error || 'Failed to send reset email')
       }
@@ -71,34 +71,15 @@ export default function ForgotPasswordPage() {
   }
 
   return (
-    <div className="fixed inset-0 bg-gradient-to-br from-blue-50 via-purple-50 to-pink-50 dark:from-zinc-900 dark:via-zinc-800 dark:to-zinc-900">
-      {/* Animated background blobs */}
-      <div className="absolute inset-0 overflow-hidden">
-        <motion.div
-          className="absolute -top-40 -right-40 w-80 h-80 bg-purple-300/30 rounded-full blur-3xl"
-          animate={{
-            scale: [1, 1.2, 1],
-            rotate: [0, 90, 0],
-          }}
-          transition={{
-            duration: 20,
-            repeat: Infinity,
-            ease: "linear"
-          }}
-        />
-        <motion.div
-          className="absolute -bottom-40 -left-40 w-80 h-80 bg-blue-300/30 rounded-full blur-3xl"
-          animate={{
-            scale: [1.2, 1, 1.2],
-            rotate: [0, -90, 0],
-          }}
-          transition={{
-            duration: 15,
-            repeat: Infinity,
-            ease: "linear"
-          }}
-        />
-      </div>
+    <div className="fixed inset-0 bg-black">
+      {/* Background Image */}
+      <div 
+        className="absolute inset-0 bg-cover bg-center opacity-10"
+        style={{ backgroundImage: 'url(/bord2.png)' }}
+      />
+      
+      {/* Semi-transparent blur overlay */}
+      <div className="absolute inset-0 backdrop-blur-[2px] bg-black/50" />
 
       <div className="relative flex items-center justify-center min-h-screen p-4">
         <motion.div
@@ -107,7 +88,7 @@ export default function ForgotPasswordPage() {
           transition={{ duration: 0.5 }}
           className="w-full max-w-md"
         >
-          <div className="bg-white/80 dark:bg-zinc-800/80 backdrop-blur-xl rounded-3xl shadow-2xl border border-white/20 dark:border-zinc-700/50 p-8">
+          <div className="bg-white/20 backdrop-blur-xl rounded-2xl shadow-2xl p-8">
             {!isSubmitted ? (
               <>
                 {/* Header */}
@@ -116,14 +97,14 @@ export default function ForgotPasswordPage() {
                     initial={{ scale: 0 }}
                     animate={{ scale: 1 }}
                     transition={{ delay: 0.2, type: "spring", stiffness: 200 }}
-                    className="w-16 h-16 bg-gradient-to-br from-blue-500 to-purple-600 rounded-2xl mx-auto mb-4 flex items-center justify-center"
+                    className="w-16 h-16 bg-black rounded-xl mx-auto mb-4 flex items-center justify-center"
                   >
                     <Mail className="w-8 h-8 text-white" />
                   </motion.div>
-                  <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">
+                  <h1 className="text-3xl font-semibold text-white mb-2 brand-font tracking-tight">
                     Forgot Password?
                   </h1>
-                  <p className="text-gray-600 dark:text-gray-400">
+                  <p className="text-zinc-300 font-light">
                     Enter your email and we'll send you reset instructions
                   </p>
                 </div>
@@ -131,18 +112,18 @@ export default function ForgotPasswordPage() {
                 {/* Form */}
                 <form onSubmit={handleSubmit} className="space-y-5">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    <label className="block text-sm font-medium text-white mb-2">
                       Email Address
                     </label>
                     <div className="relative">
                       <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                        <Mail className="w-5 h-5 text-gray-400" />
+                        <Mail className="w-5 h-5 text-zinc-400" />
                       </div>
                       <input
                         type="email"
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
-                        className="w-full pl-12 pr-4 py-3 bg-white/50 dark:bg-zinc-900/50 border border-gray-300 dark:border-zinc-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all text-gray-900 dark:text-white placeholder:text-gray-400"
+                        className="w-full pl-12 pr-4 py-3 bg-white border border-zinc-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#bfdbfe] focus:border-[#bfdbfe] transition-all text-black placeholder:text-zinc-400 font-light"
                         placeholder="you@example.com"
                         disabled={isLoading}
                       />
@@ -154,7 +135,7 @@ export default function ForgotPasswordPage() {
                     disabled={isLoading}
                     whileHover={{ scale: 1.02 }}
                     whileTap={{ scale: 0.98 }}
-                    className="w-full py-3 bg-gradient-to-r from-blue-500 to-purple-600 text-white rounded-xl font-medium shadow-lg hover:shadow-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                    className="w-full py-4 bg-black text-white rounded-xl font-medium shadow-sm hover:bg-zinc-900 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                   >
                     {isLoading ? (
                       <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
@@ -171,7 +152,7 @@ export default function ForgotPasswordPage() {
                 <div className="mt-6">
                   <Link
                     href="/login"
-                    className="flex items-center justify-center gap-2 text-sm text-gray-600 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
+                    className="flex items-center justify-center gap-2 text-sm text-zinc-300 hover:text-white font-light transition-colors"
                   >
                     <ArrowLeft className="w-4 h-4" />
                     Back to Login
@@ -186,19 +167,19 @@ export default function ForgotPasswordPage() {
                     initial={{ scale: 0 }}
                     animate={{ scale: 1 }}
                     transition={{ type: "spring", stiffness: 200 }}
-                    className="w-16 h-16 bg-gradient-to-br from-green-500 to-emerald-600 rounded-2xl mx-auto mb-4 flex items-center justify-center"
+                    className="w-16 h-16 bg-green-500 rounded-xl mx-auto mb-6 flex items-center justify-center"
                   >
                     <Send className="w-8 h-8 text-white" />
                   </motion.div>
-                  <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
+                  <h2 className="text-2xl font-semibold text-white mb-2 brand-font tracking-tight">
                     Check Your Email
                   </h2>
-                  <p className="text-gray-600 dark:text-gray-400 mb-6">
-                    If an account exists with <strong>{email}</strong>, you will receive password reset instructions.
+                  <p className="text-zinc-300 font-light mb-6">
+                    If an account exists with <strong className="text-white">{email}</strong>, you will receive password reset instructions.
                   </p>
                   <Link
                     href="/login"
-                    className="inline-block w-full py-3 bg-gradient-to-r from-blue-500 to-purple-600 text-white rounded-xl font-medium shadow-lg hover:shadow-xl transition-all"
+                    className="inline-block w-full py-4 bg-black hover:bg-zinc-900 text-white rounded-xl font-medium shadow-sm transition-all"
                   >
                     Back to Login
                   </Link>

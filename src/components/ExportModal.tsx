@@ -8,6 +8,7 @@ import { useChecklistStore } from '../store/checklistStore'
 import { useTextStore } from '../store/textStore'
 import { useKanbanStore } from '../store/kanbanStore'
 import { useMediaStore } from '../store/mediaStore'
+import { useDrawingStore } from '../store/drawingStore'
 import { toPng } from 'html-to-image'
 
 export function ExportModal() {
@@ -22,6 +23,7 @@ export function ExportModal() {
   const { texts } = useTextStore()
   const { boards: kanbanBoards } = useKanbanStore()
   const { medias } = useMediaStore()
+  const { drawings } = useDrawingStore()
 
   const currentBoard = boards.find(b => b.id === currentBoardId)
   const boardName = currentBoard?.name || 'Untitled Board'
@@ -32,7 +34,8 @@ export function ExportModal() {
   const filteredTexts = texts
   const filteredKanbans = kanbanBoards
   const filteredMedias = medias
-  const totalItems = filteredNotes.length + filteredChecklists.length + filteredTexts.length + filteredKanbans.length + filteredMedias.length
+  const filteredDrawings = drawings
+  const totalItems = filteredNotes.length + filteredChecklists.length + filteredTexts.length + filteredKanbans.length + filteredMedias.length + filteredDrawings.length
 
   // Generate preview when modal opens
   useEffect(() => {
@@ -108,6 +111,18 @@ export function ExportModal() {
         minY = Math.min(minY, media.position.y)
         maxX = Math.max(maxX, media.position.x + width)
         maxY = Math.max(maxY, media.position.y + height)
+      })
+
+      // Check all drawings
+      filteredDrawings.forEach(drawing => {
+        drawing.paths.forEach(path => {
+          path.points.forEach(point => {
+            minX = Math.min(minX, point.x)
+            minY = Math.min(minY, point.y)
+            maxX = Math.max(maxX, point.x)
+            maxY = Math.max(maxY, point.y)
+          })
+        })
       })
 
       // If no items, use default bounds
@@ -233,6 +248,18 @@ export function ExportModal() {
         minY = Math.min(minY, kanban.position.y)
         maxX = Math.max(maxX, kanban.position.x + width)
         maxY = Math.max(maxY, kanban.position.y + height)
+      })
+
+      // Check all drawings
+      filteredDrawings.forEach(drawing => {
+        drawing.paths.forEach(path => {
+          path.points.forEach(point => {
+            minX = Math.min(minX, point.x)
+            minY = Math.min(minY, point.y)
+            maxX = Math.max(maxX, point.x)
+            maxY = Math.max(maxY, point.y)
+          })
+        })
       })
 
       // Check all media items
@@ -418,7 +445,7 @@ export function ExportModal() {
                   </p>
                 </div>
 
-                <div className={`p-3 rounded-lg
+                {/* <div className={`p-3 rounded-lg
                   ${isDark ? 'bg-zinc-800/50' : 'bg-zinc-100'}`}>
                   <p className={`text-xs font-medium mb-1
                     ${isDark ? 'text-zinc-400' : 'text-zinc-600'}`}>
@@ -428,7 +455,7 @@ export function ExportModal() {
                     ${isDark ? 'text-zinc-200' : 'text-zinc-800'}`}>
                     {totalItems} items
                   </p>
-                </div>
+                </div> */}
 
                 <div className={`p-3 rounded-lg
                   ${isDark ? 'bg-zinc-800/50' : 'bg-zinc-100'}`}>
@@ -436,7 +463,7 @@ export function ExportModal() {
                     ${isDark ? 'text-zinc-400' : 'text-zinc-600'}`}>
                     Format
                   </p>
-                  <p className={`text-sm font-medium
+                  <p className={`text-sm font-medium, drawings
                     ${isDark ? 'text-zinc-200' : 'text-zinc-800'}`}>
                     PNG (2x quality)
                   </p>

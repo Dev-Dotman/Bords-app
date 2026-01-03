@@ -2,8 +2,9 @@ import { motion } from 'framer-motion'
 import { useBoardStore } from '../store/boardStore'
 import { useThemeStore } from '../store/themeStore'
 import { Trash2, Edit2, Plus, Layout, X } from 'lucide-react'
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useMemo } from 'react'
 import { format } from 'date-fns'
+import { useSession } from 'next-auth/react'
 
 interface BoardsPanelProps {
   isOpen: boolean
@@ -11,8 +12,15 @@ interface BoardsPanelProps {
 }
 
 export function BoardsPanel({ isOpen, onClose }: BoardsPanelProps) {
+  const { data: session } = useSession()
   const isDark = useThemeStore((state) => state.isDark)
-  const { boards, currentBoardId, addBoard, deleteBoard, setCurrentBoard } = useBoardStore()
+  const { currentBoardId, addBoard, deleteBoard, setCurrentBoard } = useBoardStore()
+  const currentUserId = useBoardStore((state) => state.currentUserId)
+  const allBoards = useBoardStore((state) => state.boards)
+  const userBoards = useMemo(() => 
+    allBoards.filter(b => b.userId === currentUserId),
+    [allBoards, currentUserId]
+  )
   const [newBoardName, setNewBoardName] = useState('')
   const [isCreating, setIsCreating] = useState(false)
   const panelRef = useRef<HTMLDivElement>(null)
@@ -32,9 +40,9 @@ export function BoardsPanel({ isOpen, onClose }: BoardsPanelProps) {
   }, [isOpen, onClose])
 
   const handleCreateBoard = () => {
-    if (!newBoardName.trim()) return
+    if (!newBoardName.trim() || !session?.user?.email) return
     
-    addBoard(newBoardName)
+    addBoard(newBoardName, session.user.email)
     setNewBoardName('')
     setIsCreating(false)
   }
@@ -103,7 +111,7 @@ export function BoardsPanel({ isOpen, onClose }: BoardsPanelProps) {
 
         {/* Boards List */}
         <div className="space-y-2">
-          {boards.map((board) => (
+          {userBoards.map((board) => (
             <div
               key={board.id}
               className={`

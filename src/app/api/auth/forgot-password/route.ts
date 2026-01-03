@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
+import { render } from '@react-email/components'
 import connectDB from '@/lib/mongodb'
 import User from '@/models/User'
 import PasswordResetToken from '@/models/PasswordResetToken'
 import { generateToken, hashToken } from '@/lib/auth'
 import { sendEmail } from '@/lib/email'
-import { getPasswordResetEmail } from '@/lib/email-templates'
+import PasswordResetEmail from '@/emails/PasswordResetEmail'
 
 const forgotPasswordSchema = z.object({
   email: z.string().email('Invalid email address'),
@@ -49,16 +50,23 @@ export async function POST(req: NextRequest) {
     })
 
     // Send password reset email
-    const resetUrl = `${process.env.NEXT_PUBLIC_APP_URL}/reset-password?token=${token}`
+    const baseUrl = process.env.NODE_ENV === 'development' 
+      ? 'http://localhost:3000' 
+      : 'https://app.bords.app'
+    const resetUrl = `${baseUrl}/reset-password?token=${token}`
     
     try {
-      await sendEmail({
-        to: user.email,
-        subject: 'Reset Your Password - Boards',
-        html: getPasswordResetEmail({
+      const emailHtml = await render(
+        PasswordResetEmail({
           name: `${user.firstName} ${user.lastName}`.trim(),
           resetUrl,
-        }),
+        })
+      )
+      
+      await sendEmail({
+        to: user.email,
+        subject: 'Reset Your Password - BORDS',
+        html: emailHtml,
       })
     } catch (emailError) {
       console.error('Failed to send password reset email:', emailError)

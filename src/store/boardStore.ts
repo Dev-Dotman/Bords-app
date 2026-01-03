@@ -3,6 +3,7 @@ import { persist } from 'zustand/middleware'
 
 export interface Board {
   id: string
+  userId: string // Owner's user ID for security
   name: string
   createdAt: Date
   lastModified: Date
@@ -23,9 +24,11 @@ export interface Board {
 interface BoardStore {
   boards: Board[]
   currentBoardId: string | null
+  currentUserId: string | null
   isBoardsPanelOpen: boolean
   isBackgroundModalOpen: boolean
-  addBoard: (name: string) => void
+  setCurrentUserId: (userId: string | null) => void
+  addBoard: (name: string, userId: string) => void
   deleteBoard: (id: string) => void
   updateBoard: (id: string, updates: Partial<Board>) => void
   setCurrentBoard: (id: string) => void
@@ -41,31 +44,42 @@ interface BoardStore {
   updateBoardBlurLevel: (boardId: string, blurLevel: 'sm' | 'md' | 'lg' | 'xl') => void
   openBackgroundModal: () => void
   closeBackgroundModal: () => void
+  getUserBoards: () => Board[]
+  clearUserData: () => void
 }
 
 export const useBoardStore = create<BoardStore>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       boards: [],
       currentBoardId: null,
+      currentUserId: null,
       isBoardsPanelOpen: false,
       isBackgroundModalOpen: false,
-      addBoard: (name) => set((state) => ({
-        boards: [...state.boards, {
-          id: Date.now().toString(),
-          name,
-          createdAt: new Date(),
-          lastModified: new Date(),
-          notes: [],
-          checklists: [],
-          texts: [],
-          connections: [],
-          drawings: [],
-          kanbans: [],
-          medias: [],
-        }],
-        currentBoardId: state.boards.length === 0 ? Date.now().toString() : state.currentBoardId
-      })),
+      setCurrentUserId: (userId) => set({ currentUserId: userId }),
+      addBoard: (name, userId) => {
+        const newBoardId = Date.now().toString()
+        set((state) => {
+          const userBoards = state.boards.filter(b => b.userId === userId)
+          return {
+            boards: [...state.boards, {
+              id: newBoardId,
+              userId,
+              name,
+              createdAt: new Date(),
+              lastModified: new Date(),
+              notes: [],
+              checklists: [],
+              texts: [],
+              connections: [],
+              drawings: [],
+              kanbans: [],
+              medias: []
+            }],
+            currentBoardId: userBoards.length === 0 ? newBoardId : state.currentBoardId
+          }
+        })
+      },
       deleteBoard: (id) => set((state) => ({
         boards: state.boards.filter((board) => board.id !== id),
         currentBoardId: state.currentBoardId === id ? 
@@ -145,7 +159,17 @@ export const useBoardStore = create<BoardStore>()(
           )
         })),
       openBackgroundModal: () => set({ isBackgroundModalOpen: true }),
-      closeBackgroundModal: () => set({ isBackgroundModalOpen: false })
+      closeBackgroundModal: () => set({ isBackgroundModalOpen: false }),
+      getUserBoards: () => {
+        const state = get()
+        return state.boards.filter(b => b.userId === state.currentUserId)
+      },
+      clearUserData: () => set({ 
+        currentBoardId: null, 
+        currentUserId: null,
+        isBoardsPanelOpen: false,
+        isBackgroundModalOpen: false 
+      })
     }),
     {
       name: 'board-storage'

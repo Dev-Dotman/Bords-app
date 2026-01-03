@@ -53,7 +53,7 @@ interface ThemeStore {
 export const useThemeStore = create<ThemeStore>()(
   persist(
     (set, get) => ({
-      isDark: false,
+      isDark: true,
       colorTheme: 'zinc',
       toggleDark: () => {
         const gridStore = useGridStore.getState()

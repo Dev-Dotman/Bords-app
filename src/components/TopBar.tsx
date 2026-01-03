@@ -37,10 +37,11 @@ export function TopBar() {
   const currentBoard = useBoardStore((state) => 
     state.boards.find(board => board.id === state.currentBoardId)
   )
-  const { isBoardsPanelOpen, toggleBoardsPanel } = useBoardStore()
+  const { isBoardsPanelOpen, toggleBoardsPanel, clearUserData } = useBoardStore()
   const { isPresentationMode, togglePresentationMode } = usePresentationStore()
 
   const handleLogout = async () => {
+    clearUserData() // Clear user-specific data before signing out
     await signOut({ callbackUrl: '/login' })
   }
 

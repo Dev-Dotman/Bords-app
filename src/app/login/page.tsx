@@ -17,6 +17,8 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false)
   const [errors, setErrors] = useState<{ email?: string; password?: string }>({})
   const [isLoading, setIsLoading] = useState(false)
+  const [showResendVerification, setShowResendVerification] = useState(false)
+  const [isResending, setIsResending] = useState(false)
 
   // Redirect if already logged in
   useEffect(() => {
@@ -51,6 +53,7 @@ export default function LoginPage() {
     if (!validateForm()) return
 
     setIsLoading(true)
+    setShowResendVerification(false)
     
     try {
       const result = await signIn('credentials', {
@@ -60,6 +63,10 @@ export default function LoginPage() {
       })
 
       if (result?.error) {
+        // Check if error is about unverified email
+        if (result.error.includes('verify your email') || result.error.includes('not verified')) {
+          setShowResendVerification(true)
+        }
         toast.error(result.error)
         setIsLoading(false)
         return
@@ -71,6 +78,39 @@ export default function LoginPage() {
     } catch (error) {
       toast.error('An error occurred. Please try again.')
       setIsLoading(false)
+    }
+  }
+
+  const handleResendVerification = async () => {
+    if (!email) {
+      toast.error('Please enter your email address')
+      return
+    }
+
+    setIsResending(true)
+    
+    try {
+      const response = await fetch('/api/auth/resend-verification', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email }),
+      })
+
+      const data = await response.json()
+
+      if (response.ok) {
+        toast.success(data.message)
+        setShowResendVerification(false)
+      } else {
+        toast.error(data.error || 'Failed to resend verification email')
+      }
+    } catch (error) {
+      console.error('Resend verification error:', error)
+      toast.error('An error occurred. Please try again.')
+    } finally {
+      setIsResending(false)
     }
   }
 
@@ -205,6 +245,33 @@ export default function LoginPage() {
                   'Sign In'
                 )}
               </motion.button>
+
+              {/* Resend Verification Email */}
+              {showResendVerification && (
+                <motion.div
+                  initial={{ opacity: 0, y: -10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="p-4 bg-black/40 border border-white/20 rounded-xl"
+                >
+                  <p className="text-sm text-white mb-3 font-light">
+                    Your email address hasn't been verified yet. Check your inbox or resend the verification email.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={handleResendVerification}
+                    disabled={isResending}
+                    className="w-full py-2 bg-white hover:bg-zinc-100 text-black rounded-lg font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+                  >
+                    {isResending ? (
+                      <div className="flex items-center justify-center">
+                        <div className="w-4 h-4 border-2 border-black/30 border-t-black rounded-full animate-spin" />
+                      </div>
+                    ) : (
+                      'Resend Verification Email'
+                    )}
+                  </button>
+                </motion.div>
+              )}
             </form>
 
             {/* Sign Up Link */}

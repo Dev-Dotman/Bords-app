@@ -34,7 +34,9 @@ export default function Home() {
   const router = useRouter();
   const { data: session, status } = useSession();
   const [hoveredCell, setHoveredCell] = useState<number | null>(null);
+  const [isMobile, setIsMobile] = useState(false);
   const isDark = useThemeStore((state) => state.isDark);
+  const setCurrentUserId = useBoardStore((state) => state.setCurrentUserId);
 
   // All hooks must be called before any conditional returns
   const { notes } = useNoteStore();
@@ -49,12 +51,26 @@ export default function Home() {
     state.boards.find((board) => board.id === currentBoardId)
   );
 
-  // Redirect to login if not authenticated
+  // Detect mobile device
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 1024); // Consider tablets as mobile too
+    };
+    
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+
+  // Set current user ID and redirect to login if not authenticated
   useEffect(() => {
     if (status === "unauthenticated") {
       router.push("/login");
+    } else if (status === "authenticated" && session?.user?.email) {
+      setCurrentUserId(session.user.email);
     }
-  }, [status, router]);
+  }, [status, router, session, setCurrentUserId]);
 
   // Show loading state while checking authentication
   if (status === "loading") {
@@ -77,6 +93,28 @@ export default function Home() {
   // Don't render anything if not authenticated (will redirect)
   if (!session) {
     return null;
+  }
+
+  // Show mobile warning if on mobile device
+  if (isMobile) {
+    return (
+      <div className="fixed inset-0 bg-white flex items-center justify-center p-6">
+        <div className="max-w-md text-center">
+          <h1 className="text-2xl font-bold text-gray-900 mb-4">
+            Desktop Only
+          </h1>
+          <p className="text-gray-600 mb-6">
+            BORDS is currently only available on desktop devices. Please access this application from a computer for the best experience.
+          </p>
+          <button
+            onClick={() => router.push('/login')}
+            className="px-6 py-3 bg-black text-white rounded-lg font-medium hover:bg-gray-800 transition-colors"
+          >
+            Sign Out
+          </button>
+        </div>
+      </div>
+    );
   }
 
   // Filter items based on current board
@@ -152,7 +190,7 @@ export default function Home() {
               <h1
                 className={`text-lg font-semibold tracking-tight text-center ${isDark ? "text-white" : "text-zinc-900"}`}
               >
-                {currentBoard?.name || "Untitled Board"}
+                {currentBoard?.name || "No Board Selected"}
               </h1>
             </div>
           </div>

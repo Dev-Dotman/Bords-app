@@ -95,54 +95,43 @@ function ResetPasswordContent() {
 
   if (!token) {
     return (
-      <div className="fixed inset-0 bg-gradient-to-br from-blue-50 via-purple-50 to-pink-50 dark:from-zinc-900 dark:via-zinc-800 dark:to-zinc-900 flex items-center justify-center p-4">
-        <div className="bg-white/80 dark:bg-zinc-800/80 backdrop-blur-xl rounded-3xl shadow-2xl border border-white/20 dark:border-zinc-700/50 p-8 max-w-md w-full text-center">
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
-            Invalid Reset Link
-          </h1>
-          <p className="text-gray-600 dark:text-gray-400 mb-6">
-            This password reset link is invalid or has expired.
-          </p>
-          <Link
-            href="/forgot-password"
-            className="inline-block w-full py-3 bg-gradient-to-r from-blue-500 to-purple-600 text-white rounded-xl font-medium shadow-lg hover:shadow-xl transition-all"
-          >
-            Request New Link
-          </Link>
+      <div className="fixed inset-0 bg-black">
+        <div 
+          className="absolute inset-0 bg-cover bg-center opacity-10"
+          style={{ backgroundImage: 'url(/bord2.png)' }}
+        />
+        <div className="absolute inset-0 backdrop-blur-[2px] bg-black/50" />
+        
+        <div className="relative flex items-center justify-center min-h-screen p-4">
+          <div className="bg-white/20 backdrop-blur-xl rounded-2xl shadow-2xl p-8 max-w-md w-full text-center">
+            <h1 className="text-2xl font-semibold text-white mb-2 brand-font tracking-tight">
+              Invalid Reset Link
+            </h1>
+            <p className="text-zinc-300 font-light mb-6">
+              This password reset link is invalid or has expired.
+            </p>
+            <Link
+              href="/forgot-password"
+              className="inline-block w-full py-4 bg-black hover:bg-zinc-900 text-white rounded-xl font-medium shadow-sm transition-all"
+            >
+              Request New Link
+            </Link>
+          </div>
         </div>
       </div>
     )
   }
 
   return (
-    <div className="fixed inset-0 bg-gradient-to-br from-blue-50 via-purple-50 to-pink-50 dark:from-zinc-900 dark:via-zinc-800 dark:to-zinc-900">
-      {/* Animated background blobs */}
-      <div className="absolute inset-0 overflow-hidden">
-        <motion.div
-          className="absolute -top-40 -right-40 w-80 h-80 bg-purple-300/30 rounded-full blur-3xl"
-          animate={{
-            scale: [1, 1.2, 1],
-            rotate: [0, 90, 0],
-          }}
-          transition={{
-            duration: 20,
-            repeat: Infinity,
-            ease: "linear"
-          }}
-        />
-        <motion.div
-          className="absolute -bottom-40 -left-40 w-80 h-80 bg-blue-300/30 rounded-full blur-3xl"
-          animate={{
-            scale: [1.2, 1, 1.2],
-            rotate: [0, -90, 0],
-          }}
-          transition={{
-            duration: 15,
-            repeat: Infinity,
-            ease: "linear"
-          }}
-        />
-      </div>
+    <div className="fixed inset-0 bg-black">
+      {/* Background Image */}
+      <div 
+        className="absolute inset-0 bg-cover bg-center opacity-10"
+        style={{ backgroundImage: 'url(/bord2.png)' }}
+      />
+      
+      {/* Semi-transparent blur overlay */}
+      <div className="absolute inset-0 backdrop-blur-[2px] bg-black/50" />
 
       <div className="relative flex items-center justify-center min-h-screen p-4">
         <motion.div
@@ -151,7 +140,7 @@ function ResetPasswordContent() {
           transition={{ duration: 0.5 }}
           className="w-full max-w-md"
         >
-          <div className="bg-white/80 dark:bg-zinc-800/80 backdrop-blur-xl rounded-3xl shadow-2xl border border-white/20 dark:border-zinc-700/50 p-8">
+          <div className="bg-white/20 backdrop-blur-xl rounded-2xl shadow-2xl p-8">
             {!isSuccess ? (
               <>
                 {/* Header */}
@@ -160,14 +149,14 @@ function ResetPasswordContent() {
                     initial={{ scale: 0 }}
                     animate={{ scale: 1 }}
                     transition={{ delay: 0.2, type: "spring", stiffness: 200 }}
-                    className="w-16 h-16 bg-gradient-to-br from-blue-500 to-purple-600 rounded-2xl mx-auto mb-4 flex items-center justify-center"
+                    className="w-16 h-16 bg-black rounded-xl mx-auto mb-4 flex items-center justify-center"
                   >
                     <Lock className="w-8 h-8 text-white" />
                   </motion.div>
-                  <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">
+                  <h1 className="text-3xl font-semibold text-white mb-2 brand-font tracking-tight">
                     Reset Password
                   </h1>
-                  <p className="text-gray-600 dark:text-gray-400">
+                  <p className="text-zinc-300 font-light">
                     Enter your new password below
                   </p>
                 </div>
@@ -176,20 +165,20 @@ function ResetPasswordContent() {
                 <form onSubmit={handleSubmit} className="space-y-5">
                   {/* New Password */}
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    <label className="block text-sm font-medium text-white mb-2">
                       New Password
                     </label>
                     <div className="relative">
                       <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                        <Lock className="w-5 h-5 text-gray-400" />
+                        <Lock className="w-5 h-5 text-zinc-400" />
                       </div>
                       <input
                         type={showPassword ? 'text' : 'password'}
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
-                        className={`w-full pl-12 pr-12 py-3 bg-white/50 dark:bg-zinc-900/50 border ${
-                          errors.password ? 'border-red-500' : 'border-gray-300 dark:border-zinc-700'
-                        } rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all text-gray-900 dark:text-white placeholder:text-gray-400`}
+                        className={`w-full pl-12 pr-12 py-3 bg-white border ${
+                          errors.password ? 'border-red-500' : 'border-zinc-300'
+                        } rounded-xl focus:outline-none focus:ring-2 focus:ring-[#bfdbfe] focus:border-[#bfdbfe] transition-all text-black placeholder:text-zinc-400 font-light`}
                         placeholder="••••••••"
                       />
                       <button
@@ -198,33 +187,33 @@ function ResetPasswordContent() {
                         className="absolute inset-y-0 right-0 pr-4 flex items-center"
                       >
                         {showPassword ? (
-                          <EyeOff className="w-5 h-5 text-gray-400 hover:text-gray-600" />
+                          <EyeOff className="w-5 h-5 text-zinc-400 hover:text-zinc-600 transition-colors" />
                         ) : (
-                          <Eye className="w-5 h-5 text-gray-400 hover:text-gray-600" />
+                          <Eye className="w-5 h-5 text-zinc-400 hover:text-zinc-600 transition-colors" />
                         )}
                       </button>
                     </div>
                     {errors.password && (
-                      <p className="mt-1 text-sm text-red-500">{errors.password}</p>
+                      <p className="mt-1 text-sm text-red-500 font-light">{errors.password}</p>
                     )}
                   </div>
 
                   {/* Confirm Password */}
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    <label className="block text-sm font-medium text-white mb-2">
                       Confirm Password
                     </label>
                     <div className="relative">
                       <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                        <Lock className="w-5 h-5 text-gray-400" />
+                        <Lock className="w-5 h-5 text-zinc-400" />
                       </div>
                       <input
                         type={showConfirmPassword ? 'text' : 'password'}
                         value={confirmPassword}
                         onChange={(e) => setConfirmPassword(e.target.value)}
-                        className={`w-full pl-12 pr-12 py-3 bg-white/50 dark:bg-zinc-900/50 border ${
-                          errors.confirmPassword ? 'border-red-500' : 'border-gray-300 dark:border-zinc-700'
-                        } rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all text-gray-900 dark:text-white placeholder:text-gray-400`}
+                        className={`w-full pl-12 pr-12 py-3 bg-white border ${
+                          errors.confirmPassword ? 'border-red-500' : 'border-zinc-300'
+                        } rounded-xl focus:outline-none focus:ring-2 focus:ring-[#bfdbfe] focus:border-[#bfdbfe] transition-all text-black placeholder:text-zinc-400 font-light`}
                         placeholder="••••••••"
                       />
                       <button
@@ -233,14 +222,14 @@ function ResetPasswordContent() {
                         className="absolute inset-y-0 right-0 pr-4 flex items-center"
                       >
                         {showConfirmPassword ? (
-                          <EyeOff className="w-5 h-5 text-gray-400 hover:text-gray-600" />
+                          <EyeOff className="w-5 h-5 text-zinc-400 hover:text-zinc-600 transition-colors" />
                         ) : (
-                          <Eye className="w-5 h-5 text-gray-400 hover:text-gray-600" />
+                          <Eye className="w-5 h-5 text-zinc-400 hover:text-zinc-600 transition-colors" />
                         )}
                       </button>
                     </div>
                     {errors.confirmPassword && (
-                      <p className="mt-1 text-sm text-red-500">{errors.confirmPassword}</p>
+                      <p className="mt-1 text-sm text-red-500 font-light">{errors.confirmPassword}</p>
                     )}
                   </div>
 
@@ -249,7 +238,7 @@ function ResetPasswordContent() {
                     disabled={isLoading}
                     whileHover={{ scale: 1.02 }}
                     whileTap={{ scale: 0.98 }}
-                    className="w-full py-3 bg-gradient-to-r from-blue-500 to-purple-600 text-white rounded-xl font-medium shadow-lg hover:shadow-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="w-full py-4 bg-black text-white rounded-xl font-medium shadow-sm hover:bg-zinc-900 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {isLoading ? (
                       <div className="flex items-center justify-center">
@@ -269,19 +258,19 @@ function ResetPasswordContent() {
                     initial={{ scale: 0 }}
                     animate={{ scale: 1 }}
                     transition={{ type: "spring", stiffness: 200 }}
-                    className="w-16 h-16 bg-gradient-to-br from-green-500 to-emerald-600 rounded-2xl mx-auto mb-4 flex items-center justify-center"
+                    className="w-16 h-16 bg-green-500 rounded-xl mx-auto mb-6 flex items-center justify-center"
                   >
                     <CheckCircle className="w-8 h-8 text-white" />
                   </motion.div>
-                  <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
+                  <h2 className="text-2xl font-semibold text-white mb-2 brand-font tracking-tight">
                     Password Reset!
                   </h2>
-                  <p className="text-gray-600 dark:text-gray-400 mb-6">
+                  <p className="text-zinc-300 font-light mb-6">
                     Your password has been successfully reset. You can now log in with your new password.
                   </p>
                   <Link
                     href="/login"
-                    className="inline-block w-full py-3 bg-gradient-to-r from-blue-500 to-purple-600 text-white rounded-xl font-medium shadow-lg hover:shadow-xl transition-all"
+                    className="inline-block w-full py-4 bg-black hover:bg-zinc-900 text-white rounded-xl font-medium shadow-sm transition-all"
                   >
                     Continue to Login
                   </Link>
@@ -298,8 +287,8 @@ function ResetPasswordContent() {
 export default function ResetPasswordPage() {
   return (
     <Suspense fallback={
-      <div className="fixed inset-0 flex items-center justify-center bg-gradient-to-br from-blue-50 via-purple-50 to-pink-50">
-        <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
+      <div className="fixed inset-0 flex items-center justify-center bg-black">
+        <Loader2 className="w-8 h-8 animate-spin text-blue-400" />
       </div>
     }>
       <ResetPasswordContent />

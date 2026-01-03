@@ -186,9 +186,57 @@ export function DrawingCanvas() {
 
     if (prevPos) {
       drawLine(ctx, prevPos, pos)
+      
+      // If erasing, remove intersecting drawing points from store
+      if (isErasing) {
+        eraseIntersectingDrawings(pos)
+      }
     }
 
     setCurrentPath((prev) => [...prev, pos])
+  }
+
+  const eraseIntersectingDrawings = (eraserPos: Point) => {
+    const eraserRadius = eraserWidth / 2
+    let hasChanges = false
+    
+    drawings.forEach((drawing) => {
+      const updatedPaths = drawing.paths
+        .map((path) => {
+          // Filter out points that intersect with eraser
+          const remainingPoints = path.points.filter((point) => {
+            const dx = point.x - eraserPos.x
+            const dy = point.y - eraserPos.y
+            const distance = Math.sqrt(dx * dx + dy * dy)
+            return distance > eraserRadius
+          })
+          
+          // If path still has enough points, keep it
+          if (remainingPoints.length >= 2) {
+            if (remainingPoints.length !== path.points.length) {
+              hasChanges = true
+            }
+            return { ...path, points: remainingPoints }
+          }
+          hasChanges = true
+          return null
+        })
+        .filter((path): path is DrawingPath => path !== null)
+      
+      // If drawing has no paths left, delete it entirely
+      if (updatedPaths.length === 0) {
+        useDrawingStore.getState().deleteDrawing(drawing.id)
+        hasChanges = true
+      } else if (hasChanges) {
+        // Update drawing with remaining paths
+        useDrawingStore.getState().updateDrawing(drawing.id, updatedPaths)
+      }
+    })
+    
+    // Redraw canvas after erasing to reflect store changes
+    if (hasChanges) {
+      redrawAllPaths()
+    }
   }
 
   const handleMouseUp = () => {
@@ -271,7 +319,7 @@ export function DrawingCanvas() {
       {/* Drawing Controls - Only in drawing mode */}
       {isDrawing && showControls && (
         <div
-          className="fixed top-1/2 -translate-y-1/2 right-4 pointer-events-auto"
+          className="fixed top-1/2 -translate-y-1/2 right-24 pointer-events-auto"
           style={{ zIndex: 11 }}
         >
           <div
@@ -503,7 +551,7 @@ export function DrawingCanvas() {
         <button
           onClick={() => setShowControls(true)}
           className={`
-            fixed top-1/2 -translate-y-1/2 right-4 p-3 rounded-xl shadow-lg border transition-all
+            fixed top-1/2 -translate-y-1/2 right-24 p-3 rounded-xl shadow-lg border transition-all
             hover:scale-105 pointer-events-auto
             ${isDark
               ? 'bg-zinc-800/90 border-zinc-700/50'

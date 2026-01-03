@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { render } from '@react-email/components'
 import connectDB from '@/lib/mongodb'
 import User from '@/models/User'
 import EmailVerificationToken from '@/models/EmailVerificationToken'
 import { hashToken } from '@/lib/auth'
 import { sendEmail } from '@/lib/email'
-import { getEmailVerifiedEmail } from '@/lib/email-templates'
+import EmailVerifiedEmail from '@/emails/EmailVerifiedEmail'
 
 export async function POST(req: NextRequest) {
   try {
@@ -71,12 +72,16 @@ export async function POST(req: NextRequest) {
 
     // Send confirmation email
     try {
+      const emailHtml = await render(
+        EmailVerifiedEmail({
+          name: `${user.firstName} ${user.lastName}`.trim(),
+        })
+      )
+      
       await sendEmail({
         to: user.email,
-        subject: 'Email Verified Successfully! - Boards',
-        html: getEmailVerifiedEmail({
-          name: `${user.firstName} ${user.lastName}`.trim(),
-        }),
+        subject: 'Email Verified Successfully! - BORDS',
+        html: emailHtml,
       })
     } catch (emailError) {
       console.error('Failed to send confirmation email:', emailError)

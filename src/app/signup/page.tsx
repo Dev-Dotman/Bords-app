@@ -109,12 +109,12 @@ export default function SignUpPage() {
       toast.success('Account created! Please check your email to verify your account.')
       
       // Show verification URL in development
-      if (data.verificationUrl) {
-        console.log('Verification URL:', data.verificationUrl)
-        toast.success('Check console for verification link (dev mode)', {
-          duration: 5000,
-        })
-      }
+      // if (data.verificationUrl) {
+      //   console.log('Verification URL:', data.verificationUrl)
+      //   toast.success('Check console for verification link (dev mode)', {
+      //     duration: 5000,
+      //   })
+      // }
 
       // Redirect to login after 2 seconds
       setTimeout(() => {

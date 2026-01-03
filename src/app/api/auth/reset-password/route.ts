@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
+import { render } from '@react-email/components'
 import connectDB from '@/lib/mongodb'
 import User from '@/models/User'
 import PasswordResetToken from '@/models/PasswordResetToken'
 import { hashPassword, hashToken } from '@/lib/auth'
 import { sendEmail } from '@/lib/email'
-import { getPasswordResetSuccessEmail } from '@/lib/email-templates'
+import PasswordResetSuccessEmail from '@/emails/PasswordResetSuccessEmail'
 
 const resetPasswordSchema = z.object({
   token: z.string().min(1, 'Token is required'),
@@ -77,12 +78,16 @@ export async function POST(req: NextRequest) {
 
     // Send password reset success email
     try {
+      const emailHtml = await render(
+        PasswordResetSuccessEmail({
+          name: `${user.firstName} ${user.lastName}`.trim(),
+        })
+      )
+      
       await sendEmail({
         to: user.email,
-        subject: 'Password Successfully Changed - Boards',
-        html: getPasswordResetSuccessEmail({
-          name: `${user.firstName} ${user.lastName}`.trim(),
-        }),
+        subject: 'Password Successfully Changed - BORDS',
+        html: emailHtml,
       })
     } catch (emailError) {
       console.error('Failed to send password reset success email:', emailError)
