@@ -369,8 +369,7 @@ export function Dock() {
       )}
 
       <div className="fixed bottom-4 right-4 z-50">
-        <div className="flex items-center gap-2">
-          {/* Show mind map toggle when connections exist */}
+        {/* <div className="flex items-center gap-2">
           {connections.length > 0 && (
             <button
               onClick={toggleVisibility}
@@ -386,8 +385,7 @@ export function Dock() {
             </button>
           )}
           
-          {/* ...existing dock buttons... */}
-        </div>
+        </div> */}
       </div>
     </>
   )
