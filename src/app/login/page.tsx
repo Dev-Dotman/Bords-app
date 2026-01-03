@@ -61,9 +61,10 @@ function LoginContent() {
         email,
         password,
         callbackUrl,
-        redirect: false,
+        redirect: true, // Let NextAuth handle the redirect
       })
 
+      // This code won't execute if redirect is true and login is successful
       if (result?.error) {
         // Check if error is about unverified email
         if (result.error.includes('verify your email') || result.error.includes('not verified')) {
@@ -72,15 +73,6 @@ function LoginContent() {
         toast.error(result.error)
         setIsLoading(false)
         return
-      }
-
-      // If successful, let NextAuth handle the redirect with proper session
-      if (result?.ok) {
-        toast.success('Login successful!')
-        // Small delay to ensure toast is visible, then redirect
-        setTimeout(() => {
-          window.location.href = callbackUrl
-        }, 500)
       }
     } catch (error) {
       toast.error('An error occurred. Please try again.')
