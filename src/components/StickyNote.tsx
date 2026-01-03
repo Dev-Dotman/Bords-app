@@ -1,6 +1,7 @@
-import { motion } from 'framer-motion'
 import { Trash2, Edit2, Palette } from 'lucide-react'
 import { useState } from 'react'
+import { useDraggable } from '@dnd-kit/core'
+import { CSS } from '@dnd-kit/utilities'
 import { useNoteStore, StickyNote as StickyNoteType } from '../store/stickyNoteStore'
 import { useDragModeStore } from '../store/dragModeStore'
 import { useConnectionStore } from '../store/connectionStore';
@@ -34,27 +35,15 @@ export function StickyNote({ id, text, position, color }: StickyNoteProps) {
   const zoom = useGridStore((state) => state.zoom)
   const connections = useConnectionStore((state) => state.connections)
   const isConnected = connections.some(conn => conn.fromId === id || conn.toId === id)
+  
+  const baseWidth = 192 // Base width in pixels
+  const scaledWidth = baseWidth * zoom
 
-  const getDragConstraints = () => {
-    const padding = 16;
-    
-    return {
-      left: padding,
-      right: Math.max(padding, window.innerWidth - (scaledWidth + padding)),
-      top: undefined,
-      bottom: undefined
-    }
-  }
-
-  const handleDragEnd = (_: any, info: { offset: { x: number; y: number } }) => {
-    const constraints = getDragConstraints()
-    const newPosition = {
-      x: Math.max(constraints.left, Math.min(constraints.right, position.x + info.offset.x)),
-      y: position.y + info.offset.y
-    }
-
-    updateNote(id, { position: newPosition })
-  }
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
+    id: `note-${id}`,
+    disabled: !isDragEnabled,
+    data: { type: 'note', id, position }
+  })
 
   const handleDoubleClick = () => {
     if (isSelected) {
@@ -77,10 +66,7 @@ export function StickyNote({ id, text, position, color }: StickyNoteProps) {
     const connection = connections.find(conn => conn.fromId === id || conn.toId === id)
     if (!connection) return null
 
-    // Get the other item's ID
     const otherId = connection.fromId === id ? connection.toId : connection.fromId
-    
-    // Find the other item's position
     const otherElement = document.querySelector(`[data-node-id="${otherId}"]`)
     if (!otherElement) return null
 
@@ -89,45 +75,43 @@ export function StickyNote({ id, text, position, color }: StickyNoteProps) {
     
     if (!thisRect) return null
     
-    // Compare x positions to determine left/right
     return otherRect.left < thisRect.left ? 'left' : 'right'
   }
 
-  const baseWidth = 192 // Base width in pixels
-  const scaledWidth = baseWidth * zoom
+  const style = {
+    transform: CSS.Translate.toString(transform),
+    position: 'absolute' as const,
+    left: position.x,
+    top: position.y,
+    boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03)',
+    touchAction: 'none' as const,
+    width: `${scaledWidth}px`,
+    fontSize: `${14 * zoom}px`,
+    scrollMargin: 0,
+    opacity: isDragging ? 0.5 : 1,
+    zIndex: isDragging ? 1000 : 'auto',
+  }
 
   return (
     <>
-      <motion.div
-        drag={isDragEnabled}
-        dragElastic={0}
-        dragTransition={{ power: 0, timeConstant: 0 }}
-        dragMomentum={false}
-        dragConstraints={getDragConstraints()}
-        onDragEnd={handleDragEnd}
-        initial={false}
-        animate={{ x: position.x, y: position.y }}
-        // transition={false}
+      <div
+        ref={setNodeRef}
+        {...listeners}
+        {...attributes}
         onDoubleClick={handleDoubleClick}
         onClick={() => setShowNodes(true)}
         onBlur={() => setShowNodes(false)}
         className={`
-          absolute w-48 p-5 rounded-2xl sticky-note
+          w-48 p-5 rounded-2xl sticky-note
           ${color} cursor-pointer select-none relative
           backdrop-blur-sm border item-container
           ${isSelected ? 'border-blue-400/50 ring-2 ring-blue-400/30' : 'border-black/10'}
           ${isConnected ? 'ring-1 ring-blue-400/50' : ''}
           will-change-transform
         `}
-        tabIndex={0} // Make div focusable
+        tabIndex={0}
         onFocus={(e) => e.preventDefault()}
-        style={{
-          boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03)',
-          touchAction: 'none',
-          width: `${scaledWidth}px`,
-          fontSize: `${14 * zoom}px`,
-          scrollMargin: 0
-        }}
+        style={style}
         onMouseEnter={() => setShowControls(true)}
         onMouseLeave={() => setShowControls(false)}
         data-node-id={id}
@@ -158,9 +142,7 @@ export function StickyNote({ id, text, position, color }: StickyNoteProps) {
         </div>
 
         {showControls && (
-          <motion.div 
-            initial={{ opacity: 0, scale: 0.8 }}
-            animate={{ opacity: 1, scale: 1 }}
+          <div 
             className="absolute -top-2 -right-2 bg-white/80 backdrop-blur-md rounded-full shadow-lg border border-black/10 flex overflow-hidden"
           >
             <button
@@ -189,14 +171,12 @@ export function StickyNote({ id, text, position, color }: StickyNoteProps) {
             >
               <Trash2 size={14} className="text-red-600" />
             </button>
-          </motion.div>
+          </div>
         )}
 
         {/* Color Picker */}
         {showColorPicker && (
-          <motion.div
-            initial={{ opacity: 0, scale: 0.9, y: -5 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
+          <div
             className="absolute -top-20 right-0 bg-white/95 backdrop-blur-md rounded-2xl shadow-xl border border-black/10 p-3 z-50"
             onClick={(e) => e.stopPropagation()}
           >
@@ -217,9 +197,9 @@ export function StickyNote({ id, text, position, color }: StickyNoteProps) {
                 />
               ))}
             </div>
-          </motion.div>
+          </div>
         )}
-      </motion.div>
+      </div>
 
       {/* Edit Modal */}
       {showEditModal && (

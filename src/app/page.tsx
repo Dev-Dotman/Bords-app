@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { motion } from "framer-motion";
+import { DndContext, DragEndEvent, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
 import { GridBackground } from "@/components/GridBackground";
 import { Dock } from "@/components/Dock";
 import { TopBar } from "@/components/TopBar";
@@ -29,6 +30,7 @@ import { useMediaStore } from "@/store/mediaStore";
 import { MediaModal } from "@/components/MediaModal";
 import { BackgroundModal } from "@/components/BackgroundModal";
 import { ConnectionLineModal } from "@/components/ConnectionLineModal";
+import { useGridStore } from "@/store/gridStore";
 
 export default function Home() {
   const router = useRouter();
@@ -39,7 +41,7 @@ export default function Home() {
   const setCurrentUserId = useBoardStore((state) => state.setCurrentUserId);
 
   // All hooks must be called before any conditional returns
-  const { notes } = useNoteStore();
+  const { notes, updateNote } = useNoteStore();
   const { checklists } = useChecklistStore();
   const { clearSelection } = useConnectionStore();
   const connections = useConnectionStore((state) => state.connections);
@@ -50,6 +52,31 @@ export default function Home() {
   const currentBoard = useBoardStore((state) =>
     state.boards.find((board) => board.id === currentBoardId)
   );
+
+  // Setup @dnd-kit sensors
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 8, // Require 8px movement before drag starts
+      },
+    })
+  );
+
+  // Handle drag end
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, delta } = event;
+    const data = active.data.current;
+    
+    if (data?.type === 'note') {
+      const padding = 16;
+      const scaledWidth = 192 * (useGridStore.getState().zoom);
+      const newPosition = {
+        x: Math.max(padding, Math.min(window.innerWidth - (scaledWidth + padding), data.position.x + delta.x)),
+        y: data.position.y + delta.y
+      };
+      updateNote(data.id, { position: newPosition });
+    }
+  };
 
   // Detect mobile device
   useEffect(() => {
@@ -149,19 +176,20 @@ export default function Home() {
   };
 
   return (
-    <div
-      className={`fixed inset-0 ${isDark ? "bg-zinc-900" : "bg-zinc-100"} app-background overflow-auto`}
-      onClick={handleGlobalClick}
-      style={{
-        backgroundImage: currentBoard?.backgroundImage
-          ? `url(${currentBoard.backgroundImage})`
-          : undefined,
-        backgroundColor: currentBoard?.backgroundColor || undefined,
-        backgroundSize: "cover",
-        backgroundPosition: "center",
-        backgroundRepeat: "no-repeat",
-      }}
-    >
+    <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
+      <div
+        className={`fixed inset-0 ${isDark ? "bg-zinc-900" : "bg-zinc-100"} app-background overflow-auto`}
+        onClick={handleGlobalClick}
+        style={{
+          backgroundImage: currentBoard?.backgroundImage
+            ? `url(${currentBoard.backgroundImage})`
+            : undefined,
+          backgroundColor: currentBoard?.backgroundColor || undefined,
+          backgroundSize: "cover",
+          backgroundPosition: "center",
+          backgroundRepeat: "no-repeat",
+        }}
+      >
       <div className="relative min-h-[170vh]">
         <GridBackground
           hoveredCell={hoveredCell}
@@ -282,5 +310,6 @@ export default function Home() {
         </div>
       </div>
     </div>
+    </DndContext>
   );
 }
