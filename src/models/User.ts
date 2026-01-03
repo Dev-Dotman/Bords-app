@@ -75,7 +75,6 @@ const UserSchema = new Schema<IUser>(
 )
 
 // Indexes for performance
-UserSchema.index({ email: 1 })
 UserSchema.index({ emailVerifiedAt: 1 })
 
 // Virtual for checking if account is locked
