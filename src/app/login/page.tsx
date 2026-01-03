@@ -56,9 +56,11 @@ function LoginContent() {
     setShowResendVerification(false)
     
     try {
+      const callbackUrl = searchParams.get('callbackUrl') || '/'
       const result = await signIn('credentials', {
         email,
         password,
+        callbackUrl,
         redirect: false,
       })
 
@@ -72,9 +74,14 @@ function LoginContent() {
         return
       }
 
-      toast.success('Login successful!')
-      // Use window.location for full page reload to ensure session is established
-      window.location.href = '/'
+      // If successful, let NextAuth handle the redirect with proper session
+      if (result?.ok) {
+        toast.success('Login successful!')
+        // Small delay to ensure toast is visible, then redirect
+        setTimeout(() => {
+          window.location.href = callbackUrl
+        }, 500)
+      }
     } catch (error) {
       toast.error('An error occurred. Please try again.')
       setIsLoading(false)
