@@ -80,12 +80,46 @@ export const useBoardStore = create<BoardStore>()(
           }
         })
       },
-      deleteBoard: (id) => set((state) => ({
-        boards: state.boards.filter((board) => board.id !== id),
-        currentBoardId: state.currentBoardId === id ? 
-          (state.boards.length > 1 ? state.boards[0].id : null) : 
-          state.currentBoardId
-      })),
+      deleteBoard: (id) => set((state) => {
+        const boardToDelete = state.boards.find(board => board.id === id)
+        
+        if (boardToDelete) {
+          // Get all item IDs from the board
+          const noteIds = boardToDelete.notes
+          const checklistIds = boardToDelete.checklists
+          const textIds = boardToDelete.texts
+          const kanbanIds = boardToDelete.kanbans
+          const mediaIds = boardToDelete.medias
+          const drawingIds = boardToDelete.drawings
+          
+          // Import stores and delete items
+          // Note: We'll need to call these from the component level
+          // For now, we'll just remove the board and items will be orphaned
+          // The component will handle calling the delete functions
+          
+          // Store the items to delete
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('boardDeleted', { 
+              detail: { 
+                boardId: id,
+                noteIds,
+                checklistIds,
+                textIds,
+                kanbanIds,
+                mediaIds,
+                drawingIds
+              } 
+            }))
+          }
+        }
+        
+        return {
+          boards: state.boards.filter((board) => board.id !== id),
+          currentBoardId: state.currentBoardId === id ? 
+            (state.boards.length > 1 ? state.boards.filter(b => b.id !== id)[0]?.id : null) : 
+            state.currentBoardId
+        }
+      }),
       updateBoard: (id, updates) => set((state) => ({
         boards: state.boards.map((board) =>
           board.id === id ? { ...board, ...updates, lastModified: new Date() } : board

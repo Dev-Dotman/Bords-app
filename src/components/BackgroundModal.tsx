@@ -2,9 +2,10 @@
 
 import { useState, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, Upload, Trash2 } from 'lucide-react'
+import { X, Upload, Trash2, RotateCcw } from 'lucide-react'
 import { useThemeStore } from '@/store/themeStore'
 import { useBoardStore } from '@/store/boardStore'
+import { useGridStore } from '@/store/gridStore'
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10MB
 const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp']
@@ -62,6 +63,7 @@ const OVERLAY_COLORS = [
 export function BackgroundModal() {
   const isDark = useThemeStore((state) => state.isDark)
   const { isBackgroundModalOpen, closeBackgroundModal, currentBoardId, updateBoardBackground, updateBoardBackgroundColor, updateBoardOverlay, updateBoardOverlayColor, updateBoardBlurLevel } = useBoardStore()
+  const setGridColor = useGridStore((state) => state.setGridColor)
   const currentBoard = useBoardStore((state) => 
     state.boards.find(board => board.id === currentBoardId)
   )
@@ -149,6 +151,30 @@ export function BackgroundModal() {
     updateBoardOverlayColor(currentBoardId, rgba)
   }
 
+  const handleResetToDefault = () => {
+    if (!currentBoardId) return
+    
+    // Reset background settings
+    updateBoardBackground(currentBoardId, undefined)
+    updateBoardBackgroundColor(currentBoardId, undefined)
+    updateBoardOverlay(currentBoardId, false)
+    updateBoardOverlayColor(currentBoardId, undefined)
+    updateBoardBlurLevel(currentBoardId, 'md')
+    
+    // Reset grid to default color based on theme
+    const defaultGridColor = isDark ? '#333333' : '#e5e5e5'
+    setGridColor(defaultGridColor)
+    
+    // Reset local state
+    setOverlayEnabled(false)
+    setBlurLevel('md')
+    setCustomBackgroundColor('#1e293b')
+    setCustomOverlayColor('')
+    setSelectedFile(null)
+    setPreview(null)
+    setFileError('')
+  }
+
   const handleClose = () => {
     setSelectedFile(null)
     setPreview(null)
@@ -213,16 +239,29 @@ export function BackgroundModal() {
               <h2 className={`text-xl font-semibold ${isDark ? 'text-white' : 'text-zinc-900'}`}>
                 Custom Background
               </h2>
-              <button
-                onClick={handleClose}
-                className={`p-2 rounded-lg transition-colors ${
-                  isDark 
-                    ? 'hover:bg-zinc-800 text-zinc-400 hover:text-white' 
-                    : 'hover:bg-zinc-100 text-zinc-600 hover:text-zinc-900'
-                }`}
-              >
-                <X className="w-5 h-5" />
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleResetToDefault}
+                  className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors font-medium text-sm ${
+                    isDark
+                      ? 'bg-zinc-800 hover:bg-zinc-700 text-zinc-300'
+                      : 'bg-zinc-100 hover:bg-zinc-200 text-zinc-700'
+                  }`}
+                >
+                  <RotateCcw className="w-4 h-4" />
+                  Reset to Default
+                </button>
+                <button
+                  onClick={handleClose}
+                  className={`p-2 rounded-lg transition-colors ${
+                    isDark 
+                      ? 'hover:bg-zinc-800 text-zinc-400 hover:text-white' 
+                      : 'hover:bg-zinc-100 text-zinc-600 hover:text-zinc-900'
+                  }`}
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
             </div>
           </div>
 
