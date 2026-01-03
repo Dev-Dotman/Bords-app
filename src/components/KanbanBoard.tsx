@@ -1,5 +1,6 @@
 import { useState, useRef } from 'react'
-import { motion } from 'framer-motion'
+import { useDraggable } from '@dnd-kit/core'
+import { CSS } from '@dnd-kit/utilities'
 import { Plus, X, GripVertical, Trash2, Palette } from 'lucide-react'
 import { useKanbanStore } from '../store/kanbanStore'
 import { useThemeStore } from '../store/themeStore'
@@ -58,24 +59,11 @@ export function KanbanBoard({ board }: KanbanBoardProps) {
   const [showNodes, setShowNodes] = useState(false)
   const [showColorPicker, setShowColorPicker] = useState(false)
 
-  const getDragConstraints = () => {
-    const padding = 16
-    return {
-      left: padding,
-      right: Math.max(padding, window.innerWidth - 800),
-      top: undefined,
-      bottom: undefined
-    }
-  }
-
-  const handleDragEnd = (_: any, info: { offset: { x: number; y: number } }) => {
-    const constraints = getDragConstraints()
-    const newPosition = {
-      x: Math.max(constraints.left, Math.min(constraints.right, board.position.x + info.offset.x)),
-      y: board.position.y + info.offset.y
-    }
-    updateBoardPosition(board.id, newPosition)
-  }
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
+    id: `kanban-${board.id}`,
+    disabled: !isDragEnabled,
+    data: { type: 'kanban', id: board.id, position: board.position }
+  })
 
   const handleAddColumn = () => {
     if (!newColumnTitle.trim()) return
@@ -153,18 +141,29 @@ export function KanbanBoard({ board }: KanbanBoardProps) {
     return otherRect.left < thisRect.left ? 'left' : 'right'
   }
 
+  const style = {
+    transform: CSS.Translate.toString(transform),
+    position: 'absolute' as const,
+    left: board.position.x,
+    top: board.position.y,
+    width: 'fit-content' as const,
+    maxWidth: '90vw',
+    border: '1px solid rgba(255, 255, 255, 0.2)',
+    boxShadow: '0 10px 40px rgba(0, 0, 0, 0.15)',
+    touchAction: 'none' as const,
+    cursor: isDragEnabled ? 'move' : 'default',
+    scrollMargin: 0,
+    opacity: isDragging ? 0.5 : 1,
+    zIndex: isDragging ? 1000 : 'auto',
+  }
+
   return (
     <>
-      
-      <motion.div
-      drag={isDragEnabled}
-      dragElastic={0}
-      dragTransition={{ power: 0, timeConstant: 0 }}
-      dragMomentum={false}
-      dragConstraints={getDragConstraints()}
-      onDragEnd={handleDragEnd}
-      initial={false}
-      animate={{ x: board.position.x, y: board.position.y }}
+      <div
+      ref={setNodeRef}
+      {...listeners}
+      {...attributes}
+      style={style}
       data-node-id={board.id}
       onDoubleClick={handleDoubleClick}
       onClick={() => setShowNodes(true)}
@@ -173,20 +172,11 @@ export function KanbanBoard({ board }: KanbanBoardProps) {
       onMouseLeave={() => setShowNodes(false)}
       tabIndex={0}
       onFocus={(e) => e.preventDefault()}
-      className={`absolute rounded-3xl backdrop-blur-sm item-container ${board.color} ${
+      className={`rounded-3xl backdrop-blur-sm item-container ${board.color} ${
         isSelected ? 'ring-2 ring-blue-400/30' : ''
       } ${
         isConnected ? 'ring-1 ring-blue-400/50' : ''
       }`}
-      style={{
-        width: 'fit-content',
-        maxWidth: '90vw',
-        border: '1px solid rgba(255, 255, 255, 0.2)',
-        boxShadow: '0 10px 40px rgba(0, 0, 0, 0.15)',
-        touchAction: 'none',
-        cursor: isDragEnabled ? 'move' : 'default',
-        scrollMargin: 0
-      }}
     >
         {isConnected && isVisible && (
           <div 
@@ -234,9 +224,7 @@ export function KanbanBoard({ board }: KanbanBoardProps) {
 
           {/* Color Picker */}
           {showColorPicker && (
-            <motion.div
-              initial={{ opacity: 0, scale: 0.9, y: 5 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
+            <div
               className="absolute top-full right-4 mt-2 bg-white/95 backdrop-blur-md rounded-2xl shadow-xl border border-black/10 p-3 z-50"
               onClick={(e) => e.stopPropagation()}
             >
@@ -257,7 +245,7 @@ export function KanbanBoard({ board }: KanbanBoardProps) {
                   />
                 ))}
               </div>
-            </motion.div>
+            </div>
           )}
         </div>
 
@@ -450,7 +438,7 @@ export function KanbanBoard({ board }: KanbanBoardProps) {
             <span className="text-sm font-semibold">Add Column</span>
           </button>
         )}
-    </motion.div>
+    </div>
     </>
   )
 }

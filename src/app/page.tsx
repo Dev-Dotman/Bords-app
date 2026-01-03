@@ -42,12 +42,12 @@ export default function Home() {
 
   // All hooks must be called before any conditional returns
   const { notes, updateNote } = useNoteStore();
-  const { checklists } = useChecklistStore();
+  const { checklists, updateChecklist } = useChecklistStore();
   const { clearSelection } = useConnectionStore();
   const connections = useConnectionStore((state) => state.connections);
-  const { texts } = useTextStore();
-  const { boards: kanbanBoards } = useKanbanStore();
-  const { medias } = useMediaStore();
+  const { texts, updateText } = useTextStore();
+  const { boards: kanbanBoards, updateBoardPosition } = useKanbanStore();
+  const { medias, updateMedia } = useMediaStore();
   const currentBoardId = useBoardStore((state) => state.currentBoardId);
   const currentBoard = useBoardStore((state) =>
     state.boards.find((board) => board.id === currentBoardId)
@@ -75,6 +75,36 @@ export default function Home() {
         y: data.position.y + delta.y
       };
       updateNote(data.id, { position: newPosition });
+    } else if (data?.type === 'checklist') {
+      const padding = 16;
+      const scaledWidth = 320 * (useGridStore.getState().zoom);
+      const newPosition = {
+        x: Math.max(padding, Math.min(window.innerWidth - (scaledWidth + padding), data.position.x + delta.x)),
+        y: data.position.y + delta.y
+      };
+      updateChecklist(data.id, { position: newPosition });
+    } else if (data?.type === 'media') {
+      const newPosition = {
+        x: data.position.x + delta.x,
+        y: data.position.y + delta.y
+      };
+      updateMedia(data.id, { position: newPosition });
+    } else if (data?.type === 'text') {
+      const padding = 16;
+      const baseWidth = 200;
+      const safeWidth = Math.max(baseWidth, texts.find(t => t.id === data.id)?.text.length || 0 * data.fontSize * 0.6);
+      const newPosition = {
+        x: Math.max(padding, Math.min(window.innerWidth - (safeWidth + padding), data.position.x + delta.x)),
+        y: data.position.y + delta.y
+      };
+      updateText(data.id, { position: newPosition });
+    } else if (data?.type === 'kanban') {
+      const padding = 16;
+      const newPosition = {
+        x: Math.max(padding, Math.min(window.innerWidth - 800, data.position.x + delta.x)),
+        y: data.position.y + delta.y
+      };
+      updateBoardPosition(data.id, newPosition);
     }
   };
 

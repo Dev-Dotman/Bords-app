@@ -1,6 +1,7 @@
-import { motion } from 'framer-motion'
 import { Trash2, Check, Timer, Clock, Pencil, Palette } from 'lucide-react'
 import { useState, useEffect } from 'react'
+import { useDraggable } from '@dnd-kit/core'
+import { CSS } from '@dnd-kit/utilities'
 import { useChecklistStore, ChecklistItem as ChecklistItemType } from '../store/checklistStore'
 import { useDragModeStore } from '../store/dragModeStore'
 import { toast } from 'react-hot-toast'
@@ -247,34 +248,6 @@ export function Checklist({ id, title, items, position, color }: ChecklistProps)
         return deadline.toTimeString().slice(0, 5);
     }
 
-  const dragConstraints = {
-    left: -window.innerWidth * 0.25,
-    top: -window.innerHeight * 0.25,
-    right: window.innerWidth * 0.75,
-    bottom: window.innerHeight * 0.75
-  }
-
-  const getDragConstraints = () => {
-    const padding = 16;
-    
-    return {
-      left: padding,
-      right: Math.max(padding, window.innerWidth - (scaledWidth + padding)),
-      top: undefined,
-      bottom: undefined
-    }
-  }
-
-  const handleDragEnd = (_: any, info: { offset: { x: number; y: number } }) => {
-    const constraints = getDragConstraints()
-    const newPosition = {
-      x: Math.max(constraints.left, Math.min(constraints.right, position.x + info.offset.x)),
-      y: position.y + info.offset.y
-    }
-
-    updateChecklist(id, { position: newPosition })
-  }
-
   // Base sizes for scaling
   const baseWidth = 320 // Base width in pixels
   const baseFontSize = 14
@@ -303,37 +276,45 @@ export function Checklist({ id, title, items, position, color }: ChecklistProps)
     return otherRect.left < thisRect.left ? 'left' : 'right'
   }
 
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
+    id: `checklist-${id}`,
+    disabled: !isDragEnabled,
+    data: { type: 'checklist', id, position }
+  })
+
+  const style = {
+    transform: CSS.Translate.toString(transform),
+    position: 'absolute' as const,
+    left: position.x,
+    top: position.y,
+    width: `${scaledWidth}px`,
+    fontSize: `${scaledFontSize}px`,
+    padding: `${scaledSpacing * 1.25}px`,
+    boxShadow: '0 10px 40px rgba(0, 0, 0, 0.15)',
+    scrollMargin: 0,
+    opacity: isDragging ? 0.5 : 1,
+    zIndex: isDragging ? 1000 : 'auto',
+  }
+
   return (
     <>
-      <motion.div
-        drag={isDragEnabled}
-        dragConstraints={getDragConstraints()}
-        dragElastic={0}
-        dragTransition={{ power: 0, timeConstant: 0 }}
-        dragMomentum={false}
-        onDragEnd={handleDragEnd}
-        initial={false}
-        animate={{ x: position.x, y: position.y }}
-        // transition={false}
+      <div
+        ref={setNodeRef}
+        {...listeners}
+        {...attributes}
         onDoubleClick={handleDoubleClick}
         onClick={() => setShowNodes(true)}
         onBlur={() => setShowNodes(false)}
-        style={{
-          width: `${scaledWidth}px`,
-          fontSize: `${scaledFontSize}px`,
-          padding: `${scaledSpacing * 1.25}px`,
-          boxShadow: '0 10px 40px rgba(0, 0, 0, 0.15)',
-          scrollMargin: 0
-        }}
+        style={style}
         className={`
-          absolute w-80 p-5 rounded-3xl ${color}
+          w-80 p-5 rounded-3xl ${color}
           backdrop-blur-md border item-container checklist
           ${isSelected ? 'border-blue-400/50 ring-2 ring-blue-400/30' : 'border-black/10'}
           ${isConnected ? 'ring-1 ring-blue-400/50' : ''}
           ${isDragEnabled ? 'cursor-move' : 'cursor-pointer'}
           will-change-transform
         `}
-        tabIndex={0} // Make div focusable
+        tabIndex={0}
         onFocus={(e) => e.preventDefault()}
         data-node-id={id}
       >
@@ -377,9 +358,7 @@ export function Checklist({ id, title, items, position, color }: ChecklistProps)
 
           {/* Color Picker */}
           {showColorPicker && (
-            <motion.div
-              initial={{ opacity: 0, scale: 0.9, y: 5 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
+            <div
               className="absolute top-full right-0 mt-2 bg-white/95 backdrop-blur-md rounded-2xl shadow-xl border border-black/10 p-3 z-50"
               onClick={(e) => e.stopPropagation()}
             >
@@ -400,7 +379,7 @@ export function Checklist({ id, title, items, position, color }: ChecklistProps)
                   />
                 ))}
               </div>
-            </motion.div>
+            </div>
           )}
         </div>
 
@@ -570,7 +549,7 @@ export function Checklist({ id, title, items, position, color }: ChecklistProps)
         >
           + Add item
         </button>
-      </motion.div>
+      </div>
 
       {showAddTaskModal && (
         <TaskModal

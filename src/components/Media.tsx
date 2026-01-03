@@ -1,5 +1,6 @@
 import { useState, useRef } from "react";
-import { motion } from "framer-motion";
+import { useDraggable } from '@dnd-kit/core'
+import { CSS } from '@dnd-kit/utilities'
 import {
   Trash2,
   ExternalLink,
@@ -118,29 +119,33 @@ export function Media({
 
   const thumbnailUrl = type === "video" ? getYouTubeThumbnail(url) : null;
 
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
+    id: `media-${id}`,
+    disabled: !isDragEnabled,
+    data: { type: 'media', id, position }
+  })
+
+  const style = {
+    transform: CSS.Translate.toString(transform),
+    position: 'absolute' as const,
+    left: position.x,
+    top: position.y,
+    width: type === "video" ? `${width * 1.4}px` : `${width}px`,
+    cursor: isDragEnabled ? "move" : "default",
+    scrollMargin: 0,
+    touchAction: "none" as const,
+    opacity: isDragging ? 0.5 : 1,
+    zIndex: isDragging ? 1000 : 'auto',
+  }
+
   return (
     <>
-      <motion.div
-        ref={mediaRef}
-        drag={isDragEnabled}
-        dragMomentum={false}
-        dragElastic={0}
-        dragTransition={{ power: 0, timeConstant: 0 }}
-        onDragEnd={(_, info) => {
-          const newX = position.x + info.offset.x;
-          const newY = position.y + info.offset.y;
-          updateMedia(id, { position: { x: newX, y: newY } });
-        }}
-        initial={false}
-        animate={{ x: position.x, y: position.y }}
-        //   transition={false}
-        style={{
-          width: type === "video" ? `${width * 1.4}px` : `${width}px`,
-          cursor: isDragEnabled ? "move" : "default",
-          scrollMargin: 0,
-          touchAction: "none",
-        }}
-        className={`absolute item-container ${
+      <div
+        ref={setNodeRef}
+        {...listeners}
+        {...attributes}
+        style={style}
+        className={`item-container ${
           isSelected ? "ring-2 ring-blue-400/30" : ""
         }`}
         data-node-id={id}
@@ -314,9 +319,7 @@ export function Media({
 
           {/* Color Picker */}
           {showColorPicker && (
-            <motion.div
-              initial={{ opacity: 0, scale: 0.9, y: 5 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
+            <div
               className="absolute top-14 right-2 bg-white/95 backdrop-blur-md rounded-2xl shadow-xl border border-black/10 p-3 z-50"
               onClick={(e) => e.stopPropagation()}
             >
@@ -342,10 +345,10 @@ export function Media({
                   />
                 ))}
               </div>
-            </motion.div>
+            </div>
           )}
         </div>
-      </motion.div>
+      </div>
     </>
   );
 }

@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
+import { useDraggable } from '@dnd-kit/core'
+import { CSS } from '@dnd-kit/utilities'
 import { useTextStore, TextElement } from '../store/textStore'
 import { useDragModeStore } from '../store/dragModeStore'
 import { Trash2, RotateCcw, RotateCw, ZoomIn, ZoomOut, Palette } from 'lucide-react'
@@ -22,28 +23,11 @@ export function Text({ id, text, position, fontSize, color, rotation = 0 }: Text
     '#8B5CF6', '#EC4899', '#6B7280', '#FFFFFF'
   ]
 
-  const getDragConstraints = () => {
-    const padding = 16;
-    const baseWidth = 200; // minimum width of text element
-    const safeWidth = Math.max(baseWidth, text.length * fontSize * 0.6); // estimate text width
-    
-    return {
-      left: padding,
-      right: Math.max(padding, window.innerWidth - (safeWidth + padding)),
-      top: undefined,
-      bottom: undefined
-    }
-  }
-
-  const handleDragEnd = (_: any, info: { offset: { x: number; y: number } }) => {
-    const constraints = getDragConstraints()
-    const newPosition = {
-      x: Math.max(constraints.left, Math.min(constraints.right, position.x + info.offset.x)),
-      y: position.y + info.offset.y
-    }
-
-    updateText(id, { position: newPosition })
-  }
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
+    id: `text-${id}`,
+    disabled: !isDragEnabled,
+    data: { type: 'text', id, position, rotation: rotation || 0 }
+  })
 
   const adjustFontSize = (delta: number) => {
     updateText(id, {
@@ -75,23 +59,26 @@ export function Text({ id, text, position, fontSize, color, rotation = 0 }: Text
     return () => document.removeEventListener('click', handleClickOutside);
   }, [id]);
 
+  const style = {
+    transform: CSS.Translate.toString(transform),
+    position: 'absolute' as const,
+    left: position.x,
+    top: position.y,
+    rotate: `${rotation || 0}deg`,
+    userSelect: 'none' as const,
+    WebkitUserSelect: 'none' as const,
+    scrollMargin: 0,
+    opacity: isDragging ? 0.5 : 1,
+    zIndex: isDragging ? 1000 : 'auto',
+  }
+
   return (
-    <motion.div
-      ref={textRef}
-      drag={isDragEnabled}
-      dragMomentum={false}
-      dragElastic={0}
-      dragTransition={{ power: 0, timeConstant: 0 }}
-      dragConstraints={getDragConstraints()}
-      onDragEnd={handleDragEnd}
-      initial={false}
-      animate={{ 
-        x: position.x, 
-        y: position.y,
-        rotate: rotation || 0
-      }}
-      // transition={false}
-      className={`absolute select-none will-change-transform ${
+    <div
+      ref={setNodeRef}
+      {...listeners}
+      {...attributes}
+      style={style}
+      className={`select-none will-change-transform ${
         isSelected 
           ? 'ring-2 ring-blue-400/50 rounded-lg shadow-lg' 
           : isHovered ? 'ring-1 ring-blue-300/30 rounded-lg' : ''
@@ -104,7 +91,6 @@ export function Text({ id, text, position, fontSize, color, rotation = 0 }: Text
       onMouseLeave={() => setIsHovered(false)}
       data-text-id={id}
       onFocus={(e) => e.preventDefault()}
-      style={{ userSelect: 'none', WebkitUserSelect: 'none', scrollMargin: 0 }}
     >
       {isEditing ? (
         <textarea
@@ -142,16 +128,8 @@ export function Text({ id, text, position, fontSize, color, rotation = 0 }: Text
         </div>
       )}
 
-      <AnimatePresence>
-        {isSelected && !isEditing && (
-          <>
-            {/* Glassmorphic Control Bar */}
-            <motion.div 
-              initial={{ opacity: 0, y: -10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              className="absolute -top-14 left-1/2 -translate-x-1/2 flex items-center gap-1 bg-white/90 backdrop-blur-md rounded-full shadow-lg border border-black/10 p-1.5"
-            >
+      {isSelected && !isEditing && (
+          <div className="absolute -top-14 left-1/2 -translate-x-1/2 flex items-center gap-1 bg-white/90 backdrop-blur-md rounded-full shadow-lg border border-black/10 p-1.5">
               <button
                 onClick={(e) => {
                   e.stopPropagation();
@@ -225,9 +203,7 @@ export function Text({ id, text, position, fontSize, color, rotation = 0 }: Text
                 </button>
                 
                 {showColorPicker && (
-                  <motion.div
-                    initial={{ opacity: 0, scale: 0.9, y: -5 }}
-                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                  <div
                     className="absolute top-12 left-1/2 -translate-x-1/2 bg-white/95 backdrop-blur-md rounded-2xl shadow-xl border border-black/10 p-3 z-50"
                     onClick={(e) => e.stopPropagation()}
                   >
@@ -249,7 +225,7 @@ export function Text({ id, text, position, fontSize, color, rotation = 0 }: Text
                         />
                       ))}
                     </div>
-                  </motion.div>
+                  </div>
                 )}
               </div>
 
@@ -265,10 +241,8 @@ export function Text({ id, text, position, fontSize, color, rotation = 0 }: Text
               >
                 <Trash2 size={16} className="text-red-600" />
               </button>
-            </motion.div>
-          </>
-        )}
-      </AnimatePresence>
-    </motion.div>
+            </div>
+      )}
+    </div>
   )
 }
