@@ -110,7 +110,7 @@ export function BackgroundModal() {
     if (!selectedFile || !preview) return
 
     updateBoardBackground(currentBoardId, preview)
-    handleClose()
+    // handleClose()
   }
 
   const handleRemoveBackground = () => {
