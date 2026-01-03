@@ -24,9 +24,9 @@ function LoginContent() {
   useEffect(() => {
     if (status === 'authenticated') {
       const callbackUrl = searchParams.get('callbackUrl') || '/'
-      router.push(callbackUrl)
+      window.location.href = callbackUrl
     }
-  }, [status, router, searchParams])
+  }, [status, searchParams])
 
   const validateForm = () => {
     const newErrors: { email?: string; password?: string } = {}
