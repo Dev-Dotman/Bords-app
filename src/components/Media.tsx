@@ -135,7 +135,7 @@ export function Media({
         animate={{ x: position.x, y: position.y }}
         //   transition={false}
         style={{
-          width: type === "video" ? `${width * 0.7}px` : `${width}px`,
+          width: type === "video" ? `${width * 1.4}px` : `${width}px`,
           cursor: isDragEnabled ? "move" : "default",
           scrollMargin: 0,
           touchAction: "none",
