@@ -30,7 +30,7 @@ export function StickyNote({ id, text, position, color }: StickyNoteProps) {
   const [showColorPicker, setShowColorPicker] = useState(false)
   const { updateNote, deleteNote } = useNoteStore()
   const isDragEnabled = useDragModeStore((state) => state.isDragEnabled)
-  const { selectedItems, selectItem, deselectItem, isVisible } = useConnectionStore();
+  const { selectedItems, selectItem, deselectItem, isVisible, removeConnectionsByItemId } = useConnectionStore();
   const isSelected = selectedItems.some(item => item.id === id);
   const zoom = useGridStore((state) => state.zoom)
   const connections = useConnectionStore((state) => state.connections)
@@ -165,7 +165,10 @@ export function StickyNote({ id, text, position, color }: StickyNoteProps) {
             </button>
             <div className="w-px bg-gray-200" />
             <button
-              onClick={() => deleteNote(id)}
+              onClick={() => {
+                removeConnectionsByItemId(id)
+                deleteNote(id)
+              }}
               className="p-2.5 hover:bg-red-500/10 transition-all duration-200 hover:scale-110"
               title="Delete note"
             >

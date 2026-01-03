@@ -6,6 +6,7 @@ import { useDragModeStore } from '../store/dragModeStore'
 import { Trash2, RotateCcw, RotateCw, ZoomIn, ZoomOut, Palette } from 'lucide-react'
 import { useGridStore } from '../store/gridStore'
 import { useThemeStore } from '../store/themeStore'
+import { useConnectionStore } from '../store/connectionStore'
 
 export function Text({ id, text, position, fontSize, color, rotation = 0 }: TextElement & { rotation?: number }) {
   const [isEditing, setIsEditing] = useState(false)
@@ -17,6 +18,7 @@ export function Text({ id, text, position, fontSize, color, rotation = 0 }: Text
   const isDragEnabled = useDragModeStore((state) => state.isDragEnabled)
   const zoom = useGridStore((state) => state.zoom)
   const isDark = useThemeStore((state) => state.isDark)
+  const { removeConnectionsByItemId } = useConnectionStore()
 
   const colorOptions = [
     '#000000', '#EF4444', '#F59E0B', '#10B981', '#3B82F6', 
@@ -234,6 +236,7 @@ export function Text({ id, text, position, fontSize, color, rotation = 0 }: Text
               <button
                 onClick={(e) => {
                   e.stopPropagation();
+                  removeConnectionsByItemId(id);
                   deleteText(id);
                 }}
                 className="p-2 hover:bg-red-500/10 rounded-full transition-all duration-200 hover:scale-110"

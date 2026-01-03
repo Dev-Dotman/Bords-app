@@ -45,6 +45,7 @@ interface ConnectionStore {
   clearSelection: () => void
   addConnection: (fromId: string, toId: string, fromType: 'note' | 'checklist' | 'kanban' | 'text' | 'media', toType: 'note' | 'checklist' | 'kanban' | 'text' | 'media', positions: { from: { x: number; y: number }, to: { x: number; y: number } }, boardId: string) => void
   removeConnection: (id: string) => void
+  removeConnectionsByItemId: (itemId: string) => void
   clearAllConnections: () => void
   draggedNode: DraggedNode | null
   setDraggedNode: (node: DraggedNode | null) => void
@@ -73,25 +74,45 @@ export const useConnectionStore = create<ConnectionStore>()(
       clearSelection: () =>
         set({ selectedItems: [] }),
       addConnection: (fromId, toId, fromType, toType, positions, boardId) => {
-        const color = CONNECTION_COLORS[Math.floor(Math.random() * CONNECTION_COLORS.length)]
-        set((state) => ({
-          connections: [...state.connections, {
-            id: Date.now().toString(),
-            fromId,
-            toId,
-            fromType,
-            toType,
-            fromPosition: positions.from,
-            toPosition: positions.to,
-            color,
-            boardId
-          }],
-          selectedItems: [] // Clear selection after connection
-        }))
+        set((state) => {
+          // Check if connection already exists (bidirectional)
+          const exists = state.connections.some(
+            conn => 
+              (conn.fromId === fromId && conn.toId === toId) ||
+              (conn.fromId === toId && conn.toId === fromId)
+          )
+          
+          if (exists) {
+            console.warn('Connection already exists between these items')
+            return { selectedItems: [] }
+          }
+          
+          const color = CONNECTION_COLORS[Math.floor(Math.random() * CONNECTION_COLORS.length)]
+          return {
+            connections: [...state.connections, {
+              id: Date.now().toString(),
+              fromId,
+              toId,
+              fromType,
+              toType,
+              fromPosition: positions.from,
+              toPosition: positions.to,
+              color,
+              boardId
+            }],
+            selectedItems: [] // Clear selection after connection
+          }
+        })
       },
       removeConnection: (id) =>
         set((state) => ({
           connections: state.connections.filter(conn => conn.id !== id)
+        })),
+      removeConnectionsByItemId: (itemId) =>
+        set((state) => ({
+          connections: state.connections.filter(
+            conn => conn.fromId !== itemId && conn.toId !== itemId
+          )
         })),
       clearAllConnections: () => set({ connections: [], selectedItems: [] }),
       draggedNode: null,

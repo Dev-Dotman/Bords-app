@@ -43,7 +43,7 @@ export function KanbanBoard({ board }: KanbanBoardProps) {
   const isDark = useThemeStore((state) => state.isDark)
   const isDragEnabled = useDragModeStore((state) => state.isDragEnabled)
   const { updateBoardPosition, updateBoardColor, removeBoard, addTask, moveTask, deleteTask, addColumn, updateColumn, deleteColumn } = useKanbanStore()
-  const { selectItem, deselectItem, selectedItems } = useConnectionStore()
+  const { selectItem, deselectItem, selectedItems, removeConnectionsByItemId } = useConnectionStore()
   const currentBoard = useBoardStore((state) => 
     state.boards.find(b => b.id === state.currentBoardId)
   )
@@ -214,7 +214,10 @@ export function KanbanBoard({ board }: KanbanBoardProps) {
               <Palette size={18} className="text-gray-400 group-hover:text-purple-500 transition-colors" />
             </button>
             <button
-              onClick={() => removeBoard(board.id)}
+              onClick={() => {
+                removeConnectionsByItemId(board.id)
+                removeBoard(board.id)
+              }}
               className="p-2 rounded-xl transition-all hover:bg-red-50 hover:scale-105 group"
               title="Delete board"
             >

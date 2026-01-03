@@ -35,7 +35,7 @@ export function Checklist({ id, title, items, position, color }: ChecklistProps)
   const isDragEnabled = useDragModeStore((state) => state.isDragEnabled)
   const [editingTask, setEditingTask] = useState<ChecklistItemType | null>(null);
   const [showAddTaskModal, setShowAddTaskModal] = useState(false);
-  const { selectedItems, selectItem, deselectItem, isVisible } = useConnectionStore();
+  const { selectedItems, selectItem, deselectItem, isVisible, removeConnectionsByItemId } = useConnectionStore();
   const isSelected = selectedItems.some(item => item.id === id);
   const [showNodes, setShowNodes] = useState(false)
   const [showColorPicker, setShowColorPicker] = useState(false)
@@ -348,7 +348,10 @@ export function Checklist({ id, title, items, position, color }: ChecklistProps)
               <Palette size={scaledIconSize} className="text-gray-400 group-hover:text-purple-500 transition-colors" />
             </button>
             <button
-              onClick={() => deleteChecklist(id)}
+              onClick={() => {
+                removeConnectionsByItemId(id)
+                deleteChecklist(id)
+              }}
               className="p-2.5 hover:bg-red-50 rounded-xl transition-all duration-200 hover:scale-110 group"
               title="Delete checklist"
             >

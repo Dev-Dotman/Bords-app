@@ -456,6 +456,15 @@ export function Connections() {
                    shadow-lg flex items-center gap-2 hover:bg-blue-600 transition-colors pointer-events-auto"
           onClick={() => {
             if (selectedItems.length === 2) {
+              // Validate both items exist in DOM
+              const item1Exists = document.querySelector(`[data-node-id="${selectedItems[0].id}"]`)
+              const item2Exists = document.querySelector(`[data-node-id="${selectedItems[1].id}"]`)
+              
+              if (!item1Exists || !item2Exists) {
+                toast.error('Cannot connect: One or more items not found')
+                return
+              }
+              
               addConnection(
                 selectedItems[0].id,
                 selectedItems[1].id,
@@ -467,6 +476,7 @@ export function Connections() {
                 },
                 currentBoardId
               )
+              toast.success('Items connected successfully')
             }
           }}
         >

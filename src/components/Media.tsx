@@ -43,7 +43,7 @@ export function Media({
   const isDark = useThemeStore((state) => state.isDark);
   const { updateMedia, deleteMedia } = useMediaStore();
   const isDragEnabled = useDragModeStore((state) => state.isDragEnabled);
-  const { selectedItems, selectItem, deselectItem } = useConnectionStore();
+  const { selectedItems, selectItem, deselectItem, removeConnectionsByItemId } = useConnectionStore();
   const connections = useConnectionStore((state) => state.connections);
   const isVisible = useConnectionStore((state) => state.isVisible);
   const mediaRef = useRef<HTMLDivElement>(null);
@@ -51,6 +51,7 @@ export function Media({
 
   const handleDelete = (e: React.MouseEvent) => {
     e.stopPropagation();
+    removeConnectionsByItemId(id);
     deleteMedia(id);
   };
 
