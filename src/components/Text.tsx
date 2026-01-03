@@ -103,7 +103,8 @@ export function Text({ id, text, position, fontSize, color, rotation = 0 }: Text
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
       data-text-id={id}
-      style={{ userSelect: 'none', WebkitUserSelect: 'none' }}
+      onFocus={(e) => e.preventDefault()}
+      style={{ userSelect: 'none', WebkitUserSelect: 'none', scrollMargin: 0 }}
     >
       {isEditing ? (
         <textarea

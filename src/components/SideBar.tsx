@@ -1,41 +1,81 @@
 import { useState } from 'react'
 import {
-  Layers, FileImage, CheckSquare, Calendar, Tags,
-  Users, History, Command, Brain, Workflow
+  Tags, Users, Command, Brain, Workflow,
+  Image, Download, Link2, Presentation, GitBranch
 } from 'lucide-react'
 import { useThemeStore } from '../store/themeStore'
+import { usePresentationStore } from '../store/presentationStore'
+import { useExportStore } from '../store/exportStore'
+import { useMediaStore } from '../store/mediaStore'
+import { useBoardStore } from '../store/boardStore'
+import { useConnectionLineStore } from '../store/connectionLineStore'
 
 const toolItems = [
-  { id: 1, icon: Layers, label: "Nested Pages", description: "Create page hierarchies" },
-  { id: 2, icon: FileImage, label: "Rich Media", description: "Add images & files" },
-  { id: 3, icon: CheckSquare, label: "Checklists", description: "Interactive to-dos" },
-  { id: 4, icon: Calendar, label: "Timeline", description: "Schedule tasks" },
-  { id: 5, icon: Tags, label: "Tags", description: "Organize & filter" },
-  { id: 6, icon: Users, label: "Collaborate", description: "Multi-user editing" },
-  { id: 7, icon: History, label: "History", description: "Track changes" },
-  { id: 8, icon: Command, label: "Commands", description: "Quick actions" },
-  { id: 9, icon: Brain, label: "AI Helper", description: "Smart suggestions" },
-  { id: 10, icon: Workflow, label: "Automations", description: "Custom triggers" }
+  { id: 1, icon: Image, label: "Custom Backgrounds", description: "Personalize your board" },
+  { id: 2, icon: Download, label: "Export Options", description: "Save as PDF or image" },
+  { id: 3, icon: Link2, label: "Media Links", description: "Add images & videos" },
+  { id: 4, icon: Presentation, label: "Presentation Mode", description: "Full-screen view" },
+  { id: 5, icon: GitBranch, label: "Connection Lines", description: "Customize line colors" },
+  { id: 6, icon: Tags, label: "Tags", description: "Organize & filter", comingSoon: true },
+  { id: 7, icon: Users, label: "Collaborate", description: "Multi-user editing", comingSoon: true },
+  { id: 8, icon: Command, label: "Commands", description: "Quick actions", comingSoon: true },
+  { id: 9, icon: Brain, label: "AI Helper", description: "Smart suggestions", comingSoon: true },
+  { id: 10, icon: Workflow, label: "Automations", description: "Custom triggers", comingSoon: true }
 ]
 
 export function SideBar() {
   const [hoveredItem, setHoveredItem] = useState<number | null>(null);
   const isDark = useThemeStore((state) => state.isDark)
+  const { isPresentationMode, togglePresentationMode } = usePresentationStore()
+  const { openExportModal } = useExportStore()
+  const { openMediaModal } = useMediaStore()
+  const { openBackgroundModal } = useBoardStore()
+  const { openModal: openConnectionLineModal } = useConnectionLineStore()
+
+  if (isPresentationMode) return null
+
+  const handleItemClick = async (itemId: number) => {
+    const item = toolItems.find(i => i.id === itemId)
+    if (item?.comingSoon) return // Don't do anything for coming soon items
+    
+    if (itemId === 1) { // Custom Backgrounds
+      openBackgroundModal()
+    } else if (itemId === 2) { // Export Options
+      // Scroll to top before opening export modal - data-board-canvas IS the scroll container
+      const scrollContainer = document.querySelector('[data-board-canvas]') as HTMLElement
+      if (scrollContainer) {
+        scrollContainer.scrollTop = 0
+        scrollContainer.scrollLeft = 0
+        
+        // Wait for DOM to update
+        await new Promise(resolve => setTimeout(resolve, 100))
+      }
+      
+      openExportModal()
+    } else if (itemId === 3) { // Media Links
+      openMediaModal()
+    } else if (itemId === 4) { // Presentation Mode
+      togglePresentationMode()
+    } else if (itemId === 5) { // Connection Lines
+      openConnectionLineModal()
+    }
+    // Add other item handlers here as needed
+  }
 
   return (
-    <div className="fixed right-4 top-[7.5vh] z-40 h-[85vh]">
-      <div className={`flex flex-col h-full backdrop-blur-xl border shadow-lg rounded-2xl w-16
+    <div className="fixed right-4 top-1/2 -translate-y-1/2 z-40">
+      <div className={`flex flex-col backdrop-blur-xl border shadow-lg rounded-2xl w-16
         ${isDark 
           ? 'bg-zinc-800/90 border-zinc-700/50' 
           : 'bg-white/90 border-zinc-200/50'}
         transition-colors duration-200`}>
-        <div className="flex-1 overflow-y-auto py-4 flex flex-col items-center gap-4">
-          {toolItems.map((item) => (
+        <div className="py-4 flex flex-col items-center gap-4">{toolItems.map((item) => (
             <button
               key={item.id}
               className="group relative flex-shrink-0 transition-all duration-200 p-1 w-full"
               onMouseEnter={() => setHoveredItem(item.id)}
               onMouseLeave={() => setHoveredItem(null)}
+              onClick={() => handleItemClick(item.id)}
             >
               <div className={`
                 flex items-center justify-center
@@ -65,7 +105,7 @@ export function SideBar() {
               >
                 <div className="font-medium mb-1">{item.label}</div>
                 <div className="text-zinc-400 text-[10px] leading-relaxed">
-                  {item.description}
+                  {item.comingSoon ? 'Coming Soon' : item.description}
                 </div>
                 <div className="absolute top-1/2 right-0 -translate-y-1/2 translate-x-[7px]
                      border-[7px] border-transparent border-l-zinc-800"/>

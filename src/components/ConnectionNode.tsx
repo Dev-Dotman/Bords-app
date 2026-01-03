@@ -5,7 +5,7 @@ import { useState, useEffect, useRef } from 'react'
 
 interface ConnectionNodeProps {
   id: string
-  type: 'note' | 'checklist' | 'kanban'
+  type: 'note' | 'checklist' | 'kanban' | 'text' | 'media'
   position: { x: number; y: number }
   side: 'left' | 'right'
   isVisible: boolean

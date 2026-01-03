@@ -16,8 +16,8 @@ export interface Connection {
   id: string
   fromId: string
   toId: string
-  fromType: 'note' | 'checklist' | 'kanban'
-  toType: 'note' | 'checklist' | 'kanban'
+  fromType: 'note' | 'checklist' | 'kanban' | 'text' | 'media'
+  toType: 'note' | 'checklist' | 'kanban' | 'text' | 'media'
   fromPosition?: { x: number; y: number }
   toPosition?: { x: number; y: number }
   color: string
@@ -26,7 +26,7 @@ export interface Connection {
 
 interface DraggedNode {
   id: string
-  type: 'note' | 'checklist' | 'kanban'
+  type: 'note' | 'checklist' | 'kanban' | 'text' | 'media'
   side: 'left' | 'right'
   position: { x: number; y: number }
   sourceNodeRef: HTMLElement | null
@@ -36,14 +36,14 @@ interface DraggedNode {
 interface ConnectionStore {
   selectedItems: {
     id: string
-    type: 'note' | 'checklist' | 'kanban'
+    type: 'note' | 'checklist' | 'kanban' | 'text' | 'media'
     position: { x: number; y: number }
   }[]
   connections: Connection[]
-  selectItem: (id: string, type: 'note' | 'checklist' | 'kanban', position: { x: number; y: number }) => void
+  selectItem: (id: string, type: 'note' | 'checklist' | 'kanban' | 'text' | 'media', position: { x: number; y: number }) => void
   deselectItem: (id: string) => void
   clearSelection: () => void
-  addConnection: (fromId: string, toId: string, fromType: 'note' | 'checklist' | 'kanban', toType: 'note' | 'checklist' | 'kanban', positions: { from: { x: number; y: number }, to: { x: number; y: number } }, boardId: string) => void
+  addConnection: (fromId: string, toId: string, fromType: 'note' | 'checklist' | 'kanban' | 'text' | 'media', toType: 'note' | 'checklist' | 'kanban' | 'text' | 'media', positions: { from: { x: number; y: number }, to: { x: number; y: number } }, boardId: string) => void
   removeConnection: (id: string) => void
   clearAllConnections: () => void
   draggedNode: DraggedNode | null

@@ -33,6 +33,7 @@ export function BoardsPanel({ isOpen, onClose }: BoardsPanelProps) {
 
   const handleCreateBoard = () => {
     if (!newBoardName.trim()) return
+    
     addBoard(newBoardName)
     setNewBoardName('')
     setIsCreating(false)
@@ -50,13 +51,13 @@ export function BoardsPanel({ isOpen, onClose }: BoardsPanelProps) {
       animate={{ x: isOpen ? 0 : -300, opacity: isOpen ? 1 : 0 }}
       transition={{ type: 'spring', damping: 30, stiffness: 300 }}
       className={`
-        fixed left-0 top-0 bottom-0 w-80 z-50
+        fixed left-0 top-0 bottom-0 w-80 z-50 flex flex-col
         ${isDark ? 'bg-zinc-800/90' : 'bg-white/90'}
         backdrop-blur-xl border-r
         ${isDark ? 'border-zinc-700/50' : 'border-zinc-200/50'}
       `}
     >
-      <div className="p-4">
+      <div className="p-4 flex-1 overflow-y-auto">
         <div className="flex justify-between items-center mb-6">
           <h2 className={`text-lg font-semibold ${isDark ? 'text-white' : 'text-gray-800'}`}>
             My Boards

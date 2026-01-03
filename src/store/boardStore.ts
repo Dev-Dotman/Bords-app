@@ -12,17 +12,35 @@ export interface Board {
   connections: string[] // IDs of connections
   drawings: string[] // IDs of drawings
   kanbans: string[] // IDs of kanban boards
+  medias: string[] // IDs of media items
+  backgroundImage?: string // Data URL of background image
+  backgroundColor?: string // Solid background color
+  backgroundOverlay?: boolean // Semi-transparent blur overlay
+  backgroundOverlayColor?: string // Custom overlay color
+  backgroundBlurLevel?: 'sm' | 'md' | 'lg' | 'xl' // Blur intensity level
 }
 
 interface BoardStore {
   boards: Board[]
   currentBoardId: string | null
+  isBoardsPanelOpen: boolean
+  isBackgroundModalOpen: boolean
   addBoard: (name: string) => void
   deleteBoard: (id: string) => void
   updateBoard: (id: string, updates: Partial<Board>) => void
   setCurrentBoard: (id: string) => void
-  addItemToBoard: (boardId: string, itemType: 'notes' | 'checklists' | 'texts' | 'connections' | 'drawings' | 'kanbans', itemId: string) => void
-  removeItemFromBoard: (boardId: string, itemType: 'notes' | 'checklists' | 'texts' | 'connections' | 'drawings' | 'kanbans', itemId: string) => void
+  toggleBoardsPanel: () => void
+  setBoardsPanelOpen: (open: boolean) => void
+  addItemToBoard: (boardId: string, itemType: 'notes' | 'checklists' | 'texts' | 'connections' | 'drawings' | 'kanbans' | 'medias', itemId: string) => void
+  removeItemFromBoard: (boardId: string, itemType: 'notes' | 'checklists' | 'texts' | 'connections' | 'drawings' | 'kanbans' | 'medias', itemId: string) => void
+  addMediaToBoard: (boardId: string, mediaId: string) => void
+  updateBoardBackground: (boardId: string, backgroundImage: string | undefined) => void
+  updateBoardBackgroundColor: (boardId: string, backgroundColor: string | undefined) => void
+  updateBoardOverlay: (boardId: string, overlay: boolean) => void
+  updateBoardOverlayColor: (boardId: string, overlayColor: string | undefined) => void
+  updateBoardBlurLevel: (boardId: string, blurLevel: 'sm' | 'md' | 'lg' | 'xl') => void
+  openBackgroundModal: () => void
+  closeBackgroundModal: () => void
 }
 
 export const useBoardStore = create<BoardStore>()(
@@ -30,6 +48,8 @@ export const useBoardStore = create<BoardStore>()(
     (set) => ({
       boards: [],
       currentBoardId: null,
+      isBoardsPanelOpen: false,
+      isBackgroundModalOpen: false,
       addBoard: (name) => set((state) => ({
         boards: [...state.boards, {
           id: Date.now().toString(),
@@ -42,6 +62,7 @@ export const useBoardStore = create<BoardStore>()(
           connections: [],
           drawings: [],
           kanbans: [],
+          medias: [],
         }],
         currentBoardId: state.boards.length === 0 ? Date.now().toString() : state.currentBoardId
       })),
@@ -57,6 +78,8 @@ export const useBoardStore = create<BoardStore>()(
         )
       })),
       setCurrentBoard: (id) => set({ currentBoardId: id }),
+      toggleBoardsPanel: () => set((state) => ({ isBoardsPanelOpen: !state.isBoardsPanelOpen })),
+      setBoardsPanelOpen: (open) => set({ isBoardsPanelOpen: open }),
       addItemToBoard: (boardId, itemType, itemId) =>
         set((state) => ({
           boards: state.boards.map((board) =>
@@ -72,7 +95,57 @@ export const useBoardStore = create<BoardStore>()(
               ? { ...board, [itemType]: (board[itemType] || []).filter(id => id !== itemId) }
               : board
           )
-        }))
+        })),
+      addMediaToBoard: (boardId, mediaId) =>
+        set((state) => ({
+          boards: state.boards.map((board) =>
+            board.id === boardId
+              ? { ...board, medias: [...(board.medias || []), mediaId] }
+              : board
+          )
+        })),
+      updateBoardBackground: (boardId, backgroundImage) =>
+        set((state) => ({
+          boards: state.boards.map((board) =>
+            board.id === boardId
+              ? { ...board, backgroundImage, lastModified: new Date() }
+              : board
+          )
+        })),
+      updateBoardBackgroundColor: (boardId, backgroundColor) =>
+        set((state) => ({
+          boards: state.boards.map((board) =>
+            board.id === boardId
+              ? { ...board, backgroundColor, lastModified: new Date() }
+              : board
+          )
+        })),
+      updateBoardOverlay: (boardId, overlay) =>
+        set((state) => ({
+          boards: state.boards.map((board) =>
+            board.id === boardId
+              ? { ...board, backgroundOverlay: overlay, lastModified: new Date() }
+              : board
+          )
+        })),
+      updateBoardOverlayColor: (boardId, overlayColor) =>
+        set((state) => ({
+          boards: state.boards.map((board) =>
+            board.id === boardId
+              ? { ...board, backgroundOverlayColor: overlayColor, lastModified: new Date() }
+              : board
+          )
+        })),
+      updateBoardBlurLevel: (boardId, blurLevel) =>
+        set((state) => ({
+          boards: state.boards.map((board) =>
+            board.id === boardId
+              ? { ...board, backgroundBlurLevel: blurLevel, lastModified: new Date() }
+              : board
+          )
+        })),
+      openBackgroundModal: () => set({ isBackgroundModalOpen: true }),
+      closeBackgroundModal: () => set({ isBackgroundModalOpen: false })
     }),
     {
       name: 'board-storage'

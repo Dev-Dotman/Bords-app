@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Link2, Trash2, Eye, X } from 'lucide-react'
+import { Link2, Trash2, Eye, X, ChevronUp, ChevronDown } from 'lucide-react'
 import { useConnectionStore } from '../store/connectionStore'
 import { useBoardStore } from '../store/boardStore'
 import { useGridStore } from '../store/gridStore'
@@ -130,6 +130,7 @@ export function ConnectionLine({ fromId, toId, color }: ConnectionLineProps) {
 
 export function Connections() {
   const [showConnectionsView, setShowConnectionsView] = useState(false)
+  const [isCollapsed, setIsCollapsed] = useState(true)
   const { 
     removeConnection, 
     selectedItems, 
@@ -345,46 +346,95 @@ export function Connections() {
       {/* Connection Controls - High z-index */}
       <div className="fixed left-4 bottom-4 z-[100] pointer-events-auto">
         {boardConnections.length > 0 && (
-          <div className={`px-4 py-3 rounded-xl shadow-lg border backdrop-blur-xl ${
+          <div className={`rounded-xl shadow-lg border backdrop-blur-xl overflow-hidden ${
             isDark 
               ? 'bg-zinc-800/95 border-zinc-700/50' 
               : 'bg-white/95 border-zinc-200/50'
           }`}>
-            <div className="flex items-center gap-4">
-              <div className="flex items-center gap-2 text-sm">
-                <Link2 size={16} className="text-blue-500" />
-                <span className={`font-semibold ${
-                  isDark ? 'text-white' : 'text-zinc-900'
-                }`}>
-                  {boardConnections.length} Active Connection{boardConnections.length !== 1 ? 's' : ''}
-                </span>
-              </div>
-              <div className={`h-5 w-px ${
-                isDark ? 'bg-zinc-700' : 'bg-zinc-200'
-              }`} />
-              <button
-                onClick={() => setShowConnectionsView(true)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg transition-all hover:scale-105 ${
-                  isDark 
-                    ? 'text-blue-400 hover:bg-blue-500/10' 
-                    : 'text-blue-600 hover:bg-blue-50'
-                }`}
-              >
-                <Eye size={14} />
-                View
-              </button>
-              <button
-                onClick={handleClearConnections}
-                className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg transition-all hover:scale-105 ${
-                  isDark 
-                    ? 'text-red-400 hover:bg-red-500/10' 
-                    : 'text-red-600 hover:bg-red-50'
-                }`}
-              >
-                <Trash2 size={14} />
-                Clear
-              </button>
-            </div>
+            <AnimatePresence initial={false} mode="wait">
+              {isCollapsed ? (
+                <motion.div
+                  key="collapsed"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.15 }}
+                  className="flex items-center gap-2 px-3 py-2"
+                >
+                  <Link2 size={16} className="text-blue-500" />
+                  <span className={`font-semibold text-sm ${
+                    isDark ? 'text-white' : 'text-zinc-900'
+                  }`}>
+                    {boardConnections.length}
+                  </span>
+                  <button
+                    onClick={() => setIsCollapsed(false)}
+                    className={`p-1 rounded transition-colors ${
+                      isDark ? 'hover:bg-zinc-700' : 'hover:bg-gray-100'
+                    }`}
+                  >
+                    <ChevronUp size={14} className={isDark ? 'text-zinc-400' : 'text-gray-600'} />
+                  </button>
+                </motion.div>
+              ) : (
+                <motion.div
+                  key="expanded"
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: 20 }}
+                  transition={{ duration: 0.2 }}
+                  className="p-3"
+                >
+                  <div className="flex flex-col gap-2">
+                    {/* Header with count and collapse button */}
+                    <div className="flex items-center justify-between pb-2 border-b border-zinc-200/50 dark:border-zinc-700/50">
+                      <div className="flex items-center gap-2">
+                        <Link2 size={16} className="text-blue-500" />
+                        <span className={`font-semibold text-sm ${
+                          isDark ? 'text-white' : 'text-zinc-900'
+                        }`}>
+                          {boardConnections.length} Connection{boardConnections.length !== 1 ? 's' : ''}
+                        </span>
+                      </div>
+                      <button
+                        onClick={() => setIsCollapsed(true)}
+                        className={`p-1 rounded transition-colors ${
+                          isDark ? 'hover:bg-zinc-700' : 'hover:bg-gray-100'
+                        }`}
+                      >
+                        <ChevronDown size={14} className={isDark ? 'text-zinc-400' : 'text-gray-600'} />
+                      </button>
+                    </div>
+                    
+                    {/* Action buttons stacked vertically */}
+                    <div className="flex flex-col gap-1.5 pt-1">
+                      <button
+                        onClick={() => setShowConnectionsView(true)}
+                        className={`flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg transition-all hover:scale-[1.02] w-full ${
+                          isDark 
+                            ? 'text-blue-400 hover:bg-blue-500/10' 
+                            : 'text-blue-600 hover:bg-blue-50'
+                        }`}
+                      >
+                        <Eye size={16} />
+                        View Connections
+                      </button>
+                      <button
+                        onClick={handleClearConnections}
+                        className={`flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg transition-all hover:scale-[1.02] w-full ${
+                          isDark 
+                            ? 'text-red-400 hover:bg-red-500/10' 
+                            : 'text-red-600 hover:bg-red-50'
+                        }`}
+                      >
+                        <Trash2 size={16} />
+                        Clear All
+                      </button>
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
         )}
       </div>

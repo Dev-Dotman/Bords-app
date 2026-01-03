@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion'
-import { Trash2, Edit2 } from 'lucide-react'
+import { Trash2, Edit2, Palette } from 'lucide-react'
 import { useState } from 'react'
 import { useNoteStore, StickyNote as StickyNoteType } from '../store/stickyNoteStore'
 import { useDragModeStore } from '../store/dragModeStore'
@@ -10,10 +10,23 @@ import { StickyNoteEditModal } from './StickyNoteEditModal'
 
 interface StickyNoteProps extends StickyNoteType {}
 
+const colorOptions = [
+  { name: 'Yellow', value: 'bg-yellow-200/80' },
+  { name: 'Pink', value: 'bg-pink-200/80' },
+  { name: 'Blue', value: 'bg-blue-200/80' },
+  { name: 'Green', value: 'bg-green-200/80' },
+  { name: 'Purple', value: 'bg-purple-200/80' },
+  { name: 'Orange', value: 'bg-orange-200/80' },
+  { name: 'Red', value: 'bg-red-200/80' },
+  { name: 'Teal', value: 'bg-teal-200/80' },
+  { name: 'Indigo', value: 'bg-indigo-200/80' },
+]
+
 export function StickyNote({ id, text, position, color }: StickyNoteProps) {
   const [showControls, setShowControls] = useState(false)
   const [showNodes, setShowNodes] = useState(false)
   const [showEditModal, setShowEditModal] = useState(false)
+  const [showColorPicker, setShowColorPicker] = useState(false)
   const { updateNote, deleteNote } = useNoteStore()
   const isDragEnabled = useDragModeStore((state) => state.isDragEnabled)
   const { selectedItems, selectItem, deselectItem, isVisible } = useConnectionStore();
@@ -107,11 +120,13 @@ export function StickyNote({ id, text, position, color }: StickyNoteProps) {
           will-change-transform
         `}
         tabIndex={0} // Make div focusable
+        onFocus={(e) => e.preventDefault()}
         style={{
           boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03)',
           touchAction: 'none',
           width: `${scaledWidth}px`,
-          fontSize: `${14 * zoom}px`
+          fontSize: `${14 * zoom}px`,
+          scrollMargin: 0
         }}
         onMouseEnter={() => setShowControls(true)}
         onMouseLeave={() => setShowControls(false)}
@@ -151,16 +166,57 @@ export function StickyNote({ id, text, position, color }: StickyNoteProps) {
             <button
               onClick={handleEdit}
               className="p-2.5 hover:bg-blue-500/10 transition-all duration-200 hover:scale-110"
+              title="Edit note"
             >
               <Edit2 size={14} className="text-blue-600" />
             </button>
             <div className="w-px bg-gray-200" />
             <button
+              onClick={(e) => {
+                e.stopPropagation()
+                setShowColorPicker(!showColorPicker)
+              }}
+              className="p-2.5 hover:bg-purple-500/10 transition-all duration-200 hover:scale-110 relative"
+              title="Change color"
+            >
+              <Palette size={14} className="text-purple-600" />
+            </button>
+            <div className="w-px bg-gray-200" />
+            <button
               onClick={() => deleteNote(id)}
               className="p-2.5 hover:bg-red-500/10 transition-all duration-200 hover:scale-110"
+              title="Delete note"
             >
               <Trash2 size={14} className="text-red-600" />
             </button>
+          </motion.div>
+        )}
+
+        {/* Color Picker */}
+        {showColorPicker && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.9, y: -5 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            className="absolute -top-20 right-0 bg-white/95 backdrop-blur-md rounded-2xl shadow-xl border border-black/10 p-3 z-50"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="text-xs font-medium text-gray-600 mb-2 text-center">Select Color</div>
+            <div className="grid grid-cols-3 gap-2">
+              {colorOptions.map((colorOption) => (
+                <button
+                  key={colorOption.value}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    updateNote(id, { color: colorOption.value })
+                    setShowColorPicker(false)
+                  }}
+                  className={`w-10 h-10 rounded-lg border-2 transition-all duration-200 hover:scale-110 ${
+                    color === colorOption.value ? 'border-blue-500 scale-110 ring-2 ring-blue-200' : 'border-gray-300'
+                  } ${colorOption.value}`}
+                  title={colorOption.name}
+                />
+              ))}
+            </div>
           </motion.div>
         )}
       </motion.div>

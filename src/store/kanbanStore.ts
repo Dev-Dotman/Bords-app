@@ -7,6 +7,7 @@ interface KanbanStore {
   addBoard: (board: KanbanBoard) => void
   removeBoard: (id: string) => void
   updateBoardPosition: (id: string, position: { x: number; y: number }) => void
+  updateBoardColor: (id: string, color: string) => void
   addTask: (boardId: string, columnId: string, task: KanbanTask) => void
   moveTask: (boardId: string, taskId: string, fromColumnId: string, toColumnId: string, newIndex: number) => void
   updateTask: (boardId: string, columnId: string, taskId: string, updates: Partial<KanbanTask>) => void
@@ -31,6 +32,12 @@ export const useKanbanStore = create<KanbanStore>()(persist(
   updateBoardPosition: (id, position) => set((state) => ({
     boards: state.boards.map((b) =>
       b.id === id ? { ...b, position } : b
+    )
+  })),
+  
+  updateBoardColor: (id, color) => set((state) => ({
+    boards: state.boards.map((b) =>
+      b.id === id ? { ...b, color } : b
     )
   })),
   

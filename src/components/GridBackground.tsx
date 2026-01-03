@@ -2,6 +2,7 @@ import { useRef, WheelEvent, useState, useEffect } from 'react'
 import { useThemeStore, THEME_COLORS } from '../store/themeStore'
 import { useGridStore } from '../store/gridStore'
 import { motion } from 'framer-motion'
+import { useBoardStore } from '../store/boardStore'
 
 interface GridBackgroundProps {
   hoveredCell: number | null;
@@ -14,6 +15,11 @@ export function GridBackground({ hoveredCell, onCellHover, onCellClick }: GridBa
   const { isGridVisible, gridColor, zoom, setZoom, scrollY, setScrollY } = useGridStore()
   const colorTheme = useThemeStore((state) => state.colorTheme)
   const containerRef = useRef<HTMLDivElement>(null)
+  const currentBoardId = useBoardStore((state) => state.currentBoardId)
+  const currentBoard = useBoardStore((state) => 
+    state.boards.find(board => board.id === currentBoardId)
+  )
+  const hasCustomBackground = !!(currentBoard?.backgroundImage || currentBoard?.backgroundColor)
   
   // Add effect to handle initial grid color
   useEffect(() => {
@@ -57,12 +63,28 @@ export function GridBackground({ hoveredCell, onCellHover, onCellClick }: GridBa
       style={{ height: '3000px', userSelect: 'none'  }} // Make grid extend beyond viewport
       onWheel={handleWheel}
     >
+      {/* Base background layer */}
       <div 
         className={`
           absolute inset-0
-          ${isDark ? 'bg-zinc-900' : 'bg-zinc-100'}
+          ${hasCustomBackground ? '' : (isDark ? 'bg-zinc-900' : 'bg-zinc-100')}
           transition-colors duration-200
         `}
+      />
+      
+      {/* Semi-transparent blur overlay - between background and grid */}
+      {hasCustomBackground && currentBoard?.backgroundOverlay && (
+        <div 
+          className={`absolute inset-0 backdrop-blur-${currentBoard.backgroundBlurLevel || 'md'}`}
+          style={{
+            backgroundColor: currentBoard.backgroundOverlayColor || (isDark ? 'rgba(24, 24, 27, 0.6)' : 'rgba(255, 255, 255, 0.6)')
+          }}
+        />
+      )}
+
+      {/* Grid pattern layer - on top of everything */}
+      <div 
+        className="absolute inset-0"
         style={{
           backgroundSize: `${40 * zoom}px ${40 * zoom}px`,
           backgroundImage: isGridVisible ? `

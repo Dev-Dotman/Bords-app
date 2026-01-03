@@ -1,6 +1,7 @@
 import { motion } from 'framer-motion'
 import { useEffect, useState } from 'react'
 import {create} from 'zustand'
+import { useConnectionLineStore } from '@/store/connectionLineStore'
 
 interface ConnectionLineProps {
   fromId: string
@@ -10,6 +11,10 @@ interface ConnectionLineProps {
 
 export function ConnectionLine({ fromId, toId, color }: ConnectionLineProps) {
   const [path, setPath] = useState('')
+  const { colorMode, monochromaticColor } = useConnectionLineStore()
+  
+  // Use monochromatic color if that mode is selected, otherwise use the passed-in color
+  const lineColor = colorMode === 'monochromatic' ? monochromaticColor : color
 
   const updatePath = () => {
     const fromEl = document.querySelector(`[data-connection-id="${fromId}-indicator"]`)
@@ -53,7 +58,7 @@ export function ConnectionLine({ fromId, toId, color }: ConnectionLineProps) {
   return (
     <motion.path
       d={path}
-      stroke={color}
+      stroke={lineColor}
       strokeWidth="2"
       fill="none"
       strokeLinecap="round"

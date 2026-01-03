@@ -148,6 +148,11 @@ export function ChecklistForm({ onClose, position }: ChecklistFormProps) {
                   placeholder="Task description"
                   className="w-full p-3 border-0 rounded-xl bg-white/90 backdrop-blur-sm shadow-sm text-gray-900 placeholder:text-gray-500 focus:ring-2 focus:ring-blue-400/50 focus:outline-none"
                 />
+                {index === 0 && (
+                  <p className="text-xs text-gray-600 px-1">
+                    💡 Leave date & time empty if you don't want to set a deadline
+                  </p>
+                )}
                 <div className="flex gap-2">
                   <div className="relative flex-1">
                     <input

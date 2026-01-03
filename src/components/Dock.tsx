@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useThemeStore } from '../store/themeStore'
 import { useGridStore } from '../store/gridStore'
 import { useBoardStore } from '../store/boardStore'
@@ -9,6 +9,7 @@ import { useDragModeStore } from '../store/dragModeStore'
 import { useCommentStore } from '../store/commentStore';
 import { Comments } from './Comments';
 import { useConnectionStore } from '../store/connectionStore';
+import { usePresentationStore } from '../store/presentationStore'
 import {
   GripHorizontal,
   Pencil,
@@ -26,7 +27,9 @@ import {
   Calculator,
   Link,
   Type,
-  Eraser
+  Eraser,
+  X,
+  Layout
 } from 'lucide-react'
 import { useTextStore } from '../store/textStore'
 import { useOrganizePanelStore } from '../store/organizePanelStore'
@@ -34,7 +37,8 @@ import { useDrawingStore } from '../store/drawingStore'
 import { KanbanForm } from './KanbanForm'
 
 export function Dock() {
-  const [hoveredItem, setHoveredItem] = useState<number | null>(null);
+  const [hoveredItem, setHoveredItem] = useState<string | number | null>(null);
+  const [showNoBoardModal, setShowNoBoardModal] = useState(false);
   const isDark = useThemeStore((state) => state.isDark)
   const { isGridVisible, toggleGrid } = useGridStore()
   const [showNoteForm, setShowNoteForm] = useState(false)
@@ -45,12 +49,28 @@ export function Dock() {
   const [commentPosition, setCommentPosition] = useState<{ x: number; y: number } | null>(null);
   const { isCommenting, toggleCommenting, comments } = useCommentStore();
   const connections = useConnectionStore((state) => state.connections)
+  const isPresentationMode = usePresentationStore((state) => state.isPresentationMode)
   const { isVisible, toggleVisibility } = useConnectionStore()
   const { addText } = useTextStore()
   const toggleOrganizePanel = useOrganizePanelStore((state) => state.togglePanel)
   const currentBoardId = useBoardStore((state) => state.currentBoardId)
   const addItemToBoard = useBoardStore((state) => state.addItemToBoard)
+  const toggleBoardsPanel = useBoardStore((state) => state.toggleBoardsPanel)
   const { isDrawing, toggleDrawing, isErasing, toggleEraser } = useDrawingStore()
+
+  // Show modal when no board is selected
+  useEffect(() => {
+    if (!currentBoardId) {
+      const timer = setTimeout(() => {
+        setShowNoBoardModal(true);
+      }, 500);
+      return () => clearTimeout(timer);
+    } else {
+      setShowNoBoardModal(false);
+    }
+  }, [currentBoardId]);
+
+  if (isPresentationMode) return null
 
   const handleAddNote = ({ text, color }: { text: string; color: string }) => {
     // Ensure new notes are created within viewport
@@ -104,6 +124,7 @@ export function Dock() {
   }
 
   const dockItems = [
+    // Navigation & Layout
     { 
       id: 1, 
       icon: GripHorizontal, 
@@ -116,31 +137,6 @@ export function Dock() {
         : 'text-red-500 hover:text-red-600'
     },
     { 
-      id: 2, 
-      icon: Pencil, 
-      label: "Draw", 
-      description: isDrawing ? "Drawing mode active" : "Click to draw",
-      onClick: toggleDrawing,
-      isActive: isDrawing,
-      customStyle: isDrawing ? 'text-blue-500 hover:text-blue-600' : undefined
-    },
-    { 
-      id: 14, 
-      icon: Eraser, 
-      label: "Eraser", 
-      description: isErasing ? "Erasing mode active" : "Click to erase drawings",
-      onClick: toggleEraser,
-      isActive: isErasing,
-      customStyle: isErasing ? 'text-orange-500 hover:text-orange-600' : undefined
-    },
-    { 
-      id: 3, 
-      icon: StickyNote, 
-      label: "Sticky Note", 
-      description: "Add quick notes",
-      onClick: () => setShowNoteForm(true)
-    },
-    { 
       id: 4, 
       icon: LayoutGrid, 
       label: "Toggle Grid", 
@@ -148,32 +144,77 @@ export function Dock() {
       onClick: toggleGrid,
       isActive: isGridVisible 
     },
-    { id: 5, icon: FileEdit, label: "Templates", description: "Coming soon!" },
+    { id: 'separator-1', isSeparator: true },
+    
+    // Content Creation
     { 
-      id: 6, 
-      icon: Kanban, 
-      label: "Kanban", 
-      description: "Create kanban board",
-      onClick: () => setShowKanbanForm(true)
+      id: 3, 
+      icon: StickyNote, 
+      label: "Sticky Note", 
+      description: !currentBoardId ? "Select/create a board to get started" : "Add quick notes",
+      onClick: currentBoardId ? () => setShowNoteForm(true) : undefined,
+      disabled: !currentBoardId
     },
     { 
       id: 7, 
       icon: Type, 
       label: "Add Text", 
-      description: "Add text anywhere",
-      onClick: handleAddText
+      description: !currentBoardId ? "Select/create a board to get started" : "Add text anywhere",
+      onClick: currentBoardId ? handleAddText : undefined,
+      disabled: !currentBoardId
     },
+    { 
+      id: 13, 
+      icon: ListChecks, 
+      label: "Checklist", 
+      description: !currentBoardId ? "Select/create a board to get started" : "Track progress",
+      onClick: currentBoardId ? () => setShowChecklistForm(true) : undefined,
+      disabled: !currentBoardId
+    },
+    { 
+      id: 6, 
+      icon: Kanban, 
+      label: "Kanban", 
+      description: !currentBoardId ? "Select/create a board to get started" : "Create kanban board",
+      onClick: currentBoardId ? () => setShowKanbanForm(true) : undefined,
+      disabled: !currentBoardId
+    },
+    { id: 'separator-2', isSeparator: true },
+    
+    // Drawing Tools
+    { 
+      id: 2, 
+      icon: Pencil, 
+      label: "Draw", 
+      description: !currentBoardId ? "Select/create a board to get started" : (isDrawing ? "Drawing mode active" : "Click to draw"),
+      onClick: currentBoardId ? toggleDrawing : undefined,
+      isActive: isDrawing,
+      disabled: !currentBoardId,
+      customStyle: isDrawing ? 'text-blue-500 hover:text-blue-600' : undefined
+    },
+    { 
+      id: 14, 
+      icon: Eraser, 
+      label: "Eraser", 
+      description: !currentBoardId ? "Select/create a board to get started" : (isErasing ? "Erasing mode active" : "Click to erase drawings"),
+      onClick: currentBoardId ? toggleEraser : undefined,
+      isActive: isErasing,
+      disabled: !currentBoardId,
+      customStyle: isErasing ? 'text-orange-500 hover:text-orange-600' : undefined
+    },
+    { id: 'separator-3', isSeparator: true },
+    
+    // Collaboration & Management
     { 
       id: 8, 
       icon: MessageSquare, 
       label: `Comments (${comments.length})`, 
-      description: `${comments.length} comment${comments.length !== 1 ? 's' : ''} added`,
-      onClick: handleCommentClick,
+      description: !currentBoardId ? "Select/create a board to get started" : `${comments.length} comment${comments.length !== 1 ? 's' : ''} added`,
+      onClick: currentBoardId ? handleCommentClick : undefined,
       isActive: isCommenting,
+      disabled: !currentBoardId,
       customStyle: isCommenting ? 'text-purple-500 hover:text-purple-600' : undefined
     },
-    { id: 10, icon: Share2, label: "Share", description: "Coming soon!" },
-    { id: 11, icon: History, label: "History", description: "Coming soon!" },
     { 
       id: 12, 
       icon: FolderTree, 
@@ -181,14 +222,12 @@ export function Dock() {
       description: "Manage board items",
       onClick: toggleOrganizePanel
     },
-    { 
-      id: 13, 
-      icon: ListChecks, 
-      label: "Checklist", 
-      description: "Track progress",
-      onClick: () => setShowChecklistForm(true)
-    },
-    // { id: 14, icon: Calculator, label: "Calculate", description: "Coming soon!" }
+    { id: 'separator-4', isSeparator: true },
+    
+    // Coming Soon
+    { id: 5, icon: FileEdit, label: "Templates", description: "Coming soon!" },
+    { id: 10, icon: Share2, label: "Share", description: "Coming soon!" },
+    { id: 11, icon: History, label: "History", description: "Coming soon!" },
   ]
 
   return (
@@ -202,40 +241,51 @@ export function Dock() {
           transition-colors duration-200
         `}>
           {dockItems.map((item) => (
-            <button
-              key={item.id}
-              onClick={item.onClick}
-              className={`
-                flex flex-col items-center transition-all duration-200 px-1.5
-                ${hoveredItem === item.id ? 'scale-125 -translate-y-2' : 'hover:scale-110'}
-                group relative
-                ${item.isActive ? 'text-blue-500' : ''}
-              `}
-              onMouseEnter={() => setHoveredItem(item.id)}
-              onMouseLeave={() => setHoveredItem(null)}
-            >
-              <item.icon 
-                className={`w-5 h-5 transition-colors
-                  ${item.customStyle || // Use custom style if provided
-                    (isDark 
-                      ? 'text-zinc-400 group-hover:text-zinc-200' 
-                      : 'text-zinc-600 group-hover:text-zinc-900')
-                  }`}
-                strokeWidth={1.5}
+            item.isSeparator ? (
+              <div 
+                key={item.id}
+                className={`w-px h-6 ${isDark ? 'bg-zinc-700/50' : 'bg-zinc-300/50'} mx-1`}
               />
-              <div className={`
-                absolute -top-12 whitespace-nowrap
-                bg-zinc-800 text-white px-2 py-1 rounded-md
-                text-xs transform -translate-x-1/2 left-1/2
-                transition-all duration-200 pointer-events-none
-                ${hoveredItem === item.id ? 'opacity-100 scale-100' : 'opacity-0 scale-95'}
-              `}>
-                <div className="font-medium">{item.label}</div>
-                <div className="text-zinc-400 text-[10px]">{item.description}</div>
-                <div className="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-1/2 
-                     border-4 border-transparent border-t-zinc-800"></div>
-              </div>
-            </button>
+            ) : (
+              <button
+                key={item.id}
+                onClick={item.onClick}
+                disabled={item.disabled}
+                className={`
+                  flex flex-col items-center transition-all duration-200 px-1.5
+                  ${hoveredItem === item.id ? 'scale-125 -translate-y-2' : 'hover:scale-110'}
+                  group relative
+                  ${item.isActive ? 'text-blue-500' : ''}
+                  ${item.disabled ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}
+                `}
+                onMouseEnter={() => setHoveredItem(item.id)}
+                onMouseLeave={() => setHoveredItem(null)}
+              >
+                {item.icon && (
+                  <item.icon 
+                    className={`w-5 h-5 transition-colors
+                      ${item.customStyle || // Use custom style if provided
+                        (isDark 
+                          ? 'text-zinc-400 group-hover:text-zinc-200' 
+                          : 'text-zinc-600 group-hover:text-zinc-900')
+                      }`}
+                    strokeWidth={1.5}
+                  />
+                )}
+                <div className={`
+                  absolute -top-12 whitespace-nowrap
+                  bg-zinc-800 text-white px-2 py-1 rounded-md
+                  text-xs transform -translate-x-1/2 left-1/2
+                  transition-all duration-200 pointer-events-none
+                  ${hoveredItem === item.id ? 'opacity-100 scale-100' : 'opacity-0 scale-95'}
+                `}>
+                  <div className="font-medium">{item.label}</div>
+                  <div className="text-zinc-400 text-[10px]">{item.description}</div>
+                  <div className="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-1/2 
+                       border-4 border-transparent border-t-zinc-800"></div>
+                </div>
+              </button>
+            )
           ))}
         </div>
       </div>
@@ -275,6 +325,47 @@ export function Dock() {
             setCommentPosition(null);
           }}
         />
+      )}
+
+      {showNoBoardModal && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center">
+          <div className="relative max-w-md w-full mx-4 p-8 rounded-2xl">
+            <div className="text-center">
+              <div className={`
+                w-16 h-16 mx-auto mb-4 rounded-full flex items-center justify-center
+                ${isDark ? 'bg-blue-400/20' : 'bg-blue-100'}
+              `}>
+                <Layout className={`w-8 h-8 ${isDark ? 'text-blue-400' : 'text-blue-500'}`} />
+              </div>
+
+              <h3 className={`
+                text-2xl font-semibold mb-2
+                ${isDark ? 'text-white' : 'text-zinc-900'}
+              `}>
+                BORDS!
+              </h3>
+
+              <p className={`
+                mb-6
+                ${isDark ? 'text-zinc-400' : 'text-zinc-600'}
+              `}>
+                Create or select a board to get started. Boards help you organize your work and ideas.
+              </p>
+
+              <button
+                onClick={toggleBoardsPanel}
+                className={`
+                  w-full py-3 px-6 rounded-lg font-medium transition-colors
+                  ${isDark 
+                    ? 'bg-blue-400/20 hover:bg-blue-400/30 text-blue-400' 
+                    : 'bg-blue-500 hover:bg-blue-600 text-white'}
+                `}
+              >
+                Create Board
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       <div className="fixed bottom-4 right-4 z-50">
