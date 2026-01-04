@@ -61,18 +61,23 @@ function LoginContent() {
         email,
         password,
         callbackUrl,
-        redirect: true, // Let NextAuth handle the redirect
+        redirect: false, // Handle redirect manually to catch errors
       })
 
-      // This code won't execute if redirect is true and login is successful
       if (result?.error) {
         // Check if error is about unverified email
-        if (result.error.includes('verify your email') || result.error.includes('not verified')) {
+        const errorLower = result.error.toLowerCase()
+        if (errorLower.includes('verify') || errorLower.includes('not verified') || errorLower.includes('unverified')) {
           setShowResendVerification(true)
         }
         toast.error(result.error)
         setIsLoading(false)
         return
+      }
+
+      // If successful, redirect manually
+      if (result?.ok) {
+        router.push(callbackUrl)
       }
     } catch (error) {
       toast.error('An error occurred. Please try again.')
