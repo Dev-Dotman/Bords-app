@@ -128,17 +128,17 @@ export default function SignUpPage() {
   }
 
   return (
-    <div className="fixed inset-0 bg-black">
+    <div className="min-h-screen bg-black relative">
       {/* Background Image */}
       <div 
-        className="absolute inset-0 bg-cover bg-center opacity-10"
+        className="fixed inset-0 bg-cover bg-center opacity-10 -z-10"
         style={{ backgroundImage: 'url(/bord2.png)' }}
       />
       
       {/* Semi-transparent blur overlay */}
-      <div className="absolute inset-0 backdrop-blur-[2px] bg-black/50" />
+      <div className="fixed inset-0 backdrop-blur-[2px] bg-black/50 -z-10" />
 
-      <div className="relative flex items-center justify-center min-h-screen p-4 overflow-y-auto py-12">
+      <div className="relative flex items-center justify-center min-h-screen p-4 py-12">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
