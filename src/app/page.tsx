@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { motion } from "framer-motion";
+import { Trash2 } from "lucide-react";
 import { DndContext, DragEndEvent, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
 import { GridBackground } from "@/components/GridBackground";
 import { Dock } from "@/components/Dock";
@@ -28,6 +29,7 @@ import { ExportModal } from "@/components/ExportModal";
 import { Media } from "@/components/Media";
 import { useMediaStore } from "@/store/mediaStore";
 import { MediaModal } from "@/components/MediaModal";
+import { useDrawingStore } from "@/store/drawingStore";
 import { BackgroundModal } from "@/components/BackgroundModal";
 import { ConnectionLineModal } from "@/components/ConnectionLineModal";
 import { useGridStore } from "@/store/gridStore";
@@ -37,8 +39,19 @@ export default function Home() {
   const { data: session, status } = useSession();
   const [hoveredCell, setHoveredCell] = useState<number | null>(null);
   const [isMobile, setIsMobile] = useState(false);
+  const [boardToDelete, setBoardToDelete] = useState<string | null>(null);
   const isDark = useThemeStore((state) => state.isDark);
   const setCurrentUserId = useBoardStore((state) => state.setCurrentUserId);
+  
+  // Get delete functions from all stores
+  const { deleteBoard } = useBoardStore();
+  const { deleteNote } = useNoteStore();
+  const { deleteChecklist } = useChecklistStore();
+  const { deleteText } = useTextStore();
+  const { removeBoard: deleteKanban } = useKanbanStore();
+  const { deleteMedia } = useMediaStore();
+  const { deleteDrawing } = useDrawingStore();
+  const { clearBoardConnections } = useConnectionStore();
 
   // All hooks must be called before any conditional returns
   const { notes, updateNote } = useNoteStore();
@@ -128,6 +141,37 @@ export default function Home() {
       setCurrentUserId(session.user.email);
     }
   }, [status, router, session, setCurrentUserId]);
+
+  // Listen for board deletion to cleanup associated items
+  useEffect(() => {
+    const handleBoardDeleted = (event: CustomEvent) => {
+      const { boardId, noteIds, checklistIds, textIds, kanbanIds, mediaIds, drawingIds } = event.detail;
+      
+      // Delete all connections for this board
+      clearBoardConnections(boardId);
+      
+      // Delete all notes
+      noteIds.forEach((id: string) => deleteNote(id));
+      
+      // Delete all checklists
+      checklistIds.forEach((id: string) => deleteChecklist(id));
+      
+      // Delete all texts
+      textIds.forEach((id: string) => deleteText(id));
+      
+      // Delete all kanban boards
+      kanbanIds.forEach((id: string) => deleteKanban(id));
+      
+      // Delete all media
+      mediaIds.forEach((id: string) => deleteMedia(id));
+      
+      // Delete all drawings
+      drawingIds.forEach((id: string) => deleteDrawing(id));
+    };
+    
+    window.addEventListener('boardDeleted', handleBoardDeleted as EventListener);
+    return () => window.removeEventListener('boardDeleted', handleBoardDeleted as EventListener);
+  }, [deleteNote, deleteChecklist, deleteText, deleteKanban, deleteMedia, deleteDrawing, clearBoardConnections]);
 
   // Show loading state while checking authentication
   if (status === "loading") {
@@ -234,7 +278,7 @@ export default function Home() {
         >
           {/* Board Name - Centered with Glassmorphism */}
           <div
-            className="fixed top-5 left-1/2 -translate-x-1/2 pointer-events-none z-10"
+            className="fixed top-5 left-1/2 -translate-x-1/2 flex items-center gap-2 pointer-events-auto z-10"
             data-board-item
           >
             <div
@@ -251,7 +295,71 @@ export default function Home() {
                 {currentBoard?.name || "No Board Selected"}
               </h1>
             </div>
+            {currentBoardId && (
+              <button
+                onClick={() => setBoardToDelete(currentBoardId)}
+                className={`p-2.5 rounded-xl border shadow-lg backdrop-blur-xl transition-colors
+                  ${
+                    isDark
+                      ? "bg-zinc-800/70 border-zinc-700/50 hover:bg-red-500/20 text-zinc-400 hover:text-red-400"
+                      : "bg-white/70 border-zinc-200/50 hover:bg-red-50 text-zinc-600 hover:text-red-600"
+                  }`}
+              >
+                <Trash2 size={18} />
+              </button>
+            )}
           </div>
+
+          {/* Delete Confirmation Modal */}
+          {boardToDelete && (
+            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60]" onClick={() => setBoardToDelete(null)}>
+              <div 
+                className={`p-6 rounded-2xl shadow-2xl max-w-md w-full mx-4 ${
+                  isDark ? 'bg-zinc-800 border border-zinc-700' : 'bg-white'
+                }`}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="flex items-start gap-4 mb-4">
+                  <div className="p-3 rounded-full bg-red-100">
+                    <Trash2 size={24} className="text-red-600" />
+                  </div>
+                  <div className="flex-1">
+                    <h3 className={`text-lg font-semibold mb-2 ${
+                      isDark ? 'text-white' : 'text-gray-900'
+                    }`}>
+                      Delete Board?
+                    </h3>
+                    <p className={`text-sm ${
+                      isDark ? 'text-gray-400' : 'text-gray-600'
+                    }`}>
+                      This will permanently delete the board <span className="font-semibold">"{currentBoard?.name}"</span> and all its items (notes, checklists, kanban boards, text elements, media, and connections). This action cannot be undone.
+                    </p>
+                  </div>
+                </div>
+                <div className="flex gap-3 justify-end">
+                  <button
+                    onClick={() => setBoardToDelete(null)}
+                    className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                      isDark 
+                        ? 'bg-zinc-700 hover:bg-zinc-600 text-white'
+                        : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
+                    }`}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={() => {
+                      deleteBoard(boardToDelete);
+                      setBoardToDelete(null);
+                    }}
+                    className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium transition-colors"
+                  >
+                    Delete Board
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Connection Lines */}
           <div className="absolute inset-0">
