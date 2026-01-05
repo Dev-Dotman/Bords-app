@@ -1,7 +1,8 @@
-import { Trash2, Check, Timer, Clock, Pencil, Palette } from 'lucide-react'
-import { useState, useEffect } from 'react'
+import { Trash2, Check, Timer, Clock, Pencil, Palette, ChevronDown } from 'lucide-react'
+import { useState, useEffect, useRef } from 'react'
 import { useDraggable } from '@dnd-kit/core'
 import { CSS } from '@dnd-kit/utilities'
+import { Resizable } from 're-resizable'
 import { useChecklistStore, ChecklistItem as ChecklistItemType } from '../store/checklistStore'
 import { useDragModeStore } from '../store/dragModeStore'
 import { toast } from 'react-hot-toast'
@@ -17,6 +18,8 @@ interface ChecklistProps {
   items: ChecklistItemType[]
   position: { x: number; y: number }
   color: string
+  width?: number
+  height?: number
 }
 
 const checklistColorOptions = [
@@ -30,7 +33,7 @@ const checklistColorOptions = [
   { name: 'Gray', value: 'bg-zinc-100/90' },
 ]
 
-export function Checklist({ id, title, items, position, color }: ChecklistProps) {
+export function Checklist({ id, title, items, position, color, width = 320, height = 400 }: ChecklistProps) {
   const { updateChecklist, deleteChecklist, toggleItem, updateItem, toggleTimeTracking } = useChecklistStore()
   const isDragEnabled = useDragModeStore((state) => state.isDragEnabled)
   const [editingTask, setEditingTask] = useState<ChecklistItemType | null>(null);
@@ -39,9 +42,18 @@ export function Checklist({ id, title, items, position, color }: ChecklistProps)
   const isSelected = selectedItems.some(item => item.id === id);
   const [showNodes, setShowNodes] = useState(false)
   const [showColorPicker, setShowColorPicker] = useState(false)
+  const [hasOverflow, setHasOverflow] = useState(false)
+  const itemsContainerRef = useRef<HTMLDivElement>(null)
   const zoom = useGridStore((state) => state.zoom)
   const connections = useConnectionStore((state) => state.connections)
   const isConnected = connections.some(conn => conn.fromId === id || conn.toId === id)
+
+  const handleResizeStop = (e: any, direction: any, ref: any, d: any) => {
+    updateChecklist(id, {
+      width: width + d.width,
+      height: height + d.height
+    })
+  }
 
   const handleDoubleClick = () => {
     if (isSelected) {
@@ -129,6 +141,20 @@ export function Checklist({ id, title, items, position, color }: ChecklistProps)
       timeouts.forEach(timeout => clearTimeout(timeout))
     }
   }, [items, title])
+
+  // Check for overflow
+  useEffect(() => {
+    const checkOverflow = () => {
+      if (itemsContainerRef.current) {
+        const { scrollHeight, clientHeight } = itemsContainerRef.current
+        setHasOverflow(scrollHeight > clientHeight + 5)
+      }
+    }
+
+    checkOverflow()
+    window.addEventListener('resize', checkOverflow)
+    return () => window.removeEventListener('resize', checkOverflow)
+  }, [items, height])
 
   // Add time tracking effect
   useEffect(() => {
@@ -287,7 +313,6 @@ export function Checklist({ id, title, items, position, color }: ChecklistProps)
     position: 'absolute' as const,
     left: position.x,
     top: position.y,
-    width: `${scaledWidth}px`,
     fontSize: `${scaledFontSize}px`,
     padding: `${scaledSpacing * 1.25}px`,
     boxShadow: '0 10px 40px rgba(0, 0, 0, 0.15)',
@@ -299,25 +324,62 @@ export function Checklist({ id, title, items, position, color }: ChecklistProps)
   return (
     <>
       <div
-        ref={setNodeRef}
-        {...listeners}
-        {...attributes}
-        onDoubleClick={handleDoubleClick}
-        onClick={() => setShowNodes(true)}
-        onBlur={() => setShowNodes(false)}
         style={style}
-        className={`
-          w-80 p-5 rounded-3xl ${color}
-          backdrop-blur-md border item-container checklist
-          ${isSelected ? 'border-blue-400/50 ring-2 ring-blue-400/30' : 'border-black/10'}
-          ${isConnected ? 'ring-1 ring-blue-400/50' : ''}
-          ${isDragEnabled ? 'cursor-move' : 'cursor-pointer'}
-          will-change-transform
-        `}
-        tabIndex={0}
-        onFocus={(e) => e.preventDefault()}
         data-node-id={id}
       >
+        <Resizable
+          size={{ width, height }}
+          onResizeStop={handleResizeStop}
+          minWidth={280}
+          minHeight={200}
+          enable={{
+            top: false,
+            right: !isDragging,
+            bottom: !isDragging,
+            left: false,
+            topRight: false,
+            bottomRight: !isDragging,
+            bottomLeft: false,
+            topLeft: false,
+          }}
+          handleStyles={{
+            right: {
+              right: '-4px',
+              width: '8px',
+              cursor: 'ew-resize',
+            },
+            bottom: {
+              bottom: '-4px',
+              height: '8px',
+              cursor: 'ns-resize',
+            },
+            bottomRight: {
+              right: '-4px',
+              bottom: '-4px',
+              width: '12px',
+              height: '12px',
+              cursor: 'nwse-resize',
+            },
+          }}
+        >
+          <div
+            ref={setNodeRef}
+            {...listeners}
+            {...attributes}
+            onDoubleClick={handleDoubleClick}
+            onClick={() => setShowNodes(true)}
+            onBlur={() => setShowNodes(false)}
+            className={`
+              w-full h-full p-5 rounded-3xl ${color}
+              backdrop-blur-md border item-container checklist overflow-hidden relative
+              ${isSelected ? 'border-blue-400/50 ring-2 ring-blue-400/30' : 'border-black/10'}
+              ${isConnected ? 'ring-1 ring-blue-400/50' : ''}
+              ${isDragEnabled ? 'cursor-move' : 'cursor-pointer'}
+              will-change-transform
+            `}
+            tabIndex={0}
+            onFocus={(e) => e.preventDefault()}
+          >
         {isConnected && isVisible && (
           <div 
             className={`
@@ -386,7 +448,11 @@ export function Checklist({ id, title, items, position, color }: ChecklistProps)
           )}
         </div>
 
-        <div className="space-y-3 checklist-tasks">
+        <div 
+          ref={itemsContainerRef}
+          className="space-y-3 checklist-tasks overflow-auto"
+          style={{ maxHeight: 'calc(100% - 50px)' }}
+        >
           {items.map((item) => (
             <div 
               key={item.id} 
@@ -545,14 +611,49 @@ export function Checklist({ id, title, items, position, color }: ChecklistProps)
           ))}
         </div>
 
+        {hasOverflow && (
+          <div 
+            onClick={(e) => {
+              e.stopPropagation()
+              if (itemsContainerRef.current) {
+                itemsContainerRef.current.scrollTo({
+                  top: itemsContainerRef.current.scrollTop + 100,
+                  behavior: 'smooth'
+                })
+              }
+            }}
+            className="absolute bottom-8 right-6 flex items-center gap-1 text-xs font-medium cursor-pointer hover:opacity-70 transition-opacity z-10"
+            style={{ color: color.includes('white') || color.includes('yellow') ? '#666' : color.includes('blue') ? '#1e40af' : color.includes('green') ? '#15803d' : color.includes('purple') ? '#6b21a8' : color.includes('pink') ? '#be185d' : color.includes('orange') ? '#c2410c' : '#555' }}>
+            More
+            <ChevronDown size={14} />
+          </div>
+        )}
+
+        {!hasOverflow && (
+          <button
+            onClick={() => setShowAddTaskModal(true)}
+            className="mt-2 text-sm text-gray-600 hover:text-gray-800 font-semibold hover:bg-white/50 rounded-xl px-3 py-1.5 transition-all duration-200 hover:scale-105 hover:shadow-sm"
+            style={{ fontSize: `${scaledFontSize * 0.875}px` }}
+          >
+            + Add item
+          </button>
+        )}
+        </div>
+      </Resizable>
+
+      {hasOverflow && (
         <button
-          onClick={() => setShowAddTaskModal(true)}
-          className="mt-4 text-sm text-gray-600 hover:text-gray-800 font-semibold hover:bg-white/50 rounded-xl px-3 py-2 transition-all duration-200 hover:scale-105 hover:shadow-sm"
+          onClick={(e) => {
+            e.stopPropagation()
+            setShowAddTaskModal(true)
+          }}
+          className="absolute -bottom-12 left-0 right-0 mx-auto w-fit text-sm text-gray-600 hover:text-gray-800 font-semibold bg-white/90 hover:bg-white/95 backdrop-blur-sm rounded-xl px-4 py-2 transition-all duration-200 hover:scale-105 shadow-lg border border-black/10"
           style={{ fontSize: `${scaledFontSize * 0.875}px` }}
         >
           + Add item
         </button>
-      </div>
+      )}
+    </div>
 
       {showAddTaskModal && (
         <TaskModal

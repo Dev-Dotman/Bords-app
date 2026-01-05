@@ -28,6 +28,8 @@ export interface Checklist {
   position: { x: number; y: number }
   color: string
   createdAt: Date  // Add this line
+  width?: number
+  height?: number
 }
 
 interface ChecklistStore {

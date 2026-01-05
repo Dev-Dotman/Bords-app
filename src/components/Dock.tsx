@@ -78,6 +78,12 @@ export function Dock() {
     const centerX = Math.max(padding, Math.min(window.innerWidth - 200, window.innerWidth / 2 - 96))
     const centerY = Math.max(padding, Math.min(window.innerHeight - 200, window.innerHeight / 2 - 64))
     
+    // Calculate height based on text content
+    const lineHeight = 20
+    const textPadding = 60 // Top and bottom padding + label space
+    const lines = text.split('\n').length
+    const calculatedHeight = Math.max(100, (lines * lineHeight) + textPadding)
+    
     addNote({
       id: Date.now().toString(),
       text,
@@ -86,6 +92,8 @@ export function Dock() {
         x: centerX,
         y: centerY
       },
+      width: 192,
+      height: calculatedHeight,
     })
     setShowNoteForm(false)
   }

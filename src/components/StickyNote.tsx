@@ -1,7 +1,8 @@
-import { Trash2, Edit2, Palette } from 'lucide-react'
-import { useState } from 'react'
+import { Trash2, Edit2, Palette, ChevronDown } from 'lucide-react'
+import { useState, useRef, useEffect } from 'react'
 import { useDraggable } from '@dnd-kit/core'
 import { CSS } from '@dnd-kit/utilities'
+import { Resizable } from 're-resizable'
 import { useNoteStore, StickyNote as StickyNoteType } from '../store/stickyNoteStore'
 import { useDragModeStore } from '../store/dragModeStore'
 import { useConnectionStore } from '../store/connectionStore';
@@ -23,11 +24,13 @@ const colorOptions = [
   { name: 'Indigo', value: 'bg-indigo-200/80' },
 ]
 
-export function StickyNote({ id, text, position, color }: StickyNoteProps) {
+export function StickyNote({ id, text, position, color, width = 192, height }: StickyNoteProps) {
   const [showControls, setShowControls] = useState(false)
   const [showNodes, setShowNodes] = useState(false)
   const [showEditModal, setShowEditModal] = useState(false)
   const [showColorPicker, setShowColorPicker] = useState(false)
+  const [hasOverflow, setHasOverflow] = useState(false)
+  const textContainerRef = useRef<HTMLDivElement>(null)
   const { updateNote, deleteNote } = useNoteStore()
   const isDragEnabled = useDragModeStore((state) => state.isDragEnabled)
   const { selectedItems, selectItem, deselectItem, isVisible, removeConnectionsByItemId } = useConnectionStore();
@@ -35,15 +38,49 @@ export function StickyNote({ id, text, position, color }: StickyNoteProps) {
   const zoom = useGridStore((state) => state.zoom)
   const connections = useConnectionStore((state) => state.connections)
   const isConnected = connections.some(conn => conn.fromId === id || conn.toId === id)
-  
-  const baseWidth = 192 // Base width in pixels
-  const scaledWidth = baseWidth * zoom
+
+  // Calculate minimum height based on text content
+  const calculateMinHeight = () => {
+    const lineHeight = 20
+    const padding = 60 // Top and bottom padding + label space
+    const lines = text.split('\n').length
+    return Math.max(100, (lines * lineHeight) + padding)
+  }
+
+  // Calculate default height if not set
+  const calculateDefaultHeight = () => {
+    if (height) return height
+    return calculateMinHeight()
+  }
+
+  const noteHeight = calculateDefaultHeight()
+  const minHeight = calculateMinHeight()
+
+  // Check if text content overflows
+  useEffect(() => {
+    const checkOverflow = () => {
+      if (textContainerRef.current) {
+        const { scrollHeight, clientHeight } = textContainerRef.current
+        setHasOverflow(scrollHeight > clientHeight + 5) // 5px buffer
+      }
+    }
+    
+    checkOverflow()
+    // Recheck when text or height changes
+  }, [text, noteHeight])
 
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: `note-${id}`,
     disabled: !isDragEnabled,
     data: { type: 'note', id, position }
   })
+
+  const handleResizeStop = (e: any, direction: any, ref: any, d: any) => {
+    updateNote(id, {
+      width: width + d.width,
+      height: noteHeight + d.height
+    })
+  }
 
   const handleDoubleClick = () => {
     if (isSelected) {
@@ -85,8 +122,6 @@ export function StickyNote({ id, text, position, color }: StickyNoteProps) {
     top: position.y,
     boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03)',
     touchAction: 'none' as const,
-    width: `${scaledWidth}px`,
-    fontSize: `${14 * zoom}px`,
     scrollMargin: 0,
     opacity: isDragging ? 0.5 : 1,
     zIndex: isDragging ? 1000 : 'auto',
@@ -95,27 +130,64 @@ export function StickyNote({ id, text, position, color }: StickyNoteProps) {
   return (
     <>
       <div
-        ref={setNodeRef}
-        {...listeners}
-        {...attributes}
-        onDoubleClick={handleDoubleClick}
-        onClick={() => setShowNodes(true)}
-        onBlur={() => setShowNodes(false)}
-        className={`
-          w-48 p-5 rounded-2xl sticky-note
-          ${color} cursor-pointer select-none relative
-          backdrop-blur-sm border item-container
-          ${isSelected ? 'border-blue-400/50 ring-2 ring-blue-400/30' : 'border-black/10'}
-          ${isConnected ? 'ring-1 ring-blue-400/50' : ''}
-          will-change-transform
-        `}
-        tabIndex={0}
-        onFocus={(e) => e.preventDefault()}
         style={style}
-        onMouseEnter={() => setShowControls(true)}
-        onMouseLeave={() => setShowControls(false)}
         data-node-id={id}
       >
+        <Resizable
+          size={{ width, height: noteHeight }}
+          onResizeStop={handleResizeStop}
+          minWidth={150}
+          minHeight={minHeight}
+          enable={{
+            top: false,
+            right: !isDragging,
+            bottom: !isDragging,
+            left: false,
+            topRight: false,
+            bottomRight: !isDragging,
+            bottomLeft: false,
+            topLeft: false,
+          }}
+          handleStyles={{
+            right: {
+              right: '-4px',
+              width: '8px',
+              cursor: 'ew-resize',
+            },
+            bottom: {
+              bottom: '-4px',
+              height: '8px',
+              cursor: 'ns-resize',
+            },
+            bottomRight: {
+              right: '-4px',
+              bottom: '-4px',
+              width: '12px',
+              height: '12px',
+              cursor: 'nwse-resize',
+            },
+          }}
+        >
+          <div
+            ref={setNodeRef}
+            {...listeners}
+            {...attributes}
+            onDoubleClick={handleDoubleClick}
+            onClick={() => setShowNodes(true)}
+            onBlur={() => setShowNodes(false)}
+            className={`
+              w-full h-full p-5 rounded-2xl sticky-note
+              ${color} cursor-pointer select-none relative
+              backdrop-blur-sm border item-container
+              ${isSelected ? 'border-blue-400/50 ring-2 ring-blue-400/30' : 'border-black/10'}
+              ${isConnected ? 'ring-1 ring-blue-400/50' : ''}
+              will-change-transform
+            `}
+            tabIndex={0}
+            onFocus={(e) => e.preventDefault()}
+            onMouseEnter={() => setShowControls(true)}
+            onMouseLeave={() => setShowControls(false)}
+          >
         {isConnected && isVisible && (
           <div 
             className={`
@@ -137,9 +209,20 @@ export function StickyNote({ id, text, position, color }: StickyNoteProps) {
           Sticky Note
         </div>
 
-        <div className="note-content whitespace-pre-wrap break-words text-gray-800 select-none font-medium">
+        <div 
+          ref={textContainerRef}
+          className="note-content whitespace-pre-wrap break-words text-gray-800 select-none font-medium overflow-auto max-h-full pr-2"
+        >
           {text}
         </div>
+
+        {/* Read More Indicator */}
+        {hasOverflow && (
+          <div className={`absolute bottom-2 right-2 flex items-center gap-1 ${color} text-gray-800 text-[10px] px-2 py-1 rounded-full font-medium shadow-md border border-black/10`}>
+            <span>More</span>
+            <ChevronDown size={10} />
+          </div>
+        )}
 
         {showControls && (
           <div 
@@ -202,7 +285,9 @@ export function StickyNote({ id, text, position, color }: StickyNoteProps) {
             </div>
           </div>
         )}
-      </div>
+        </div>
+      </Resizable>
+    </div>
 
       {/* Edit Modal */}
       {showEditModal && (

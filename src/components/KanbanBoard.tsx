@@ -1,6 +1,7 @@
 import { useState, useRef } from 'react'
 import { useDraggable } from '@dnd-kit/core'
 import { CSS } from '@dnd-kit/utilities'
+import { Resizable } from 're-resizable'
 import { Plus, X, GripVertical, Trash2, Palette } from 'lucide-react'
 import { useKanbanStore } from '../store/kanbanStore'
 import { useThemeStore } from '../store/themeStore'
@@ -42,7 +43,14 @@ const kanbanColorOptions = [
 export function KanbanBoard({ board }: KanbanBoardProps) {
   const isDark = useThemeStore((state) => state.isDark)
   const isDragEnabled = useDragModeStore((state) => state.isDragEnabled)
-  const { updateBoardPosition, updateBoardColor, removeBoard, addTask, moveTask, deleteTask, addColumn, updateColumn, deleteColumn } = useKanbanStore()
+  const { updateBoardPosition, updateBoardColor, updateBoardSize, removeBoard, addTask, moveTask, deleteTask, addColumn, updateColumn, deleteColumn } = useKanbanStore()
+  
+  const width = board.width || 800
+  const height = board.height || 350
+  
+  const handleResizeStop = (e: any, direction: any, ref: any, d: any) => {
+    updateBoardSize(board.id, width + d.width, height + d.height)
+  }
   const { selectItem, deselectItem, selectedItems, removeConnectionsByItemId } = useConnectionStore()
   const currentBoard = useBoardStore((state) => 
     state.boards.find(b => b.id === state.currentBoardId)
@@ -102,13 +110,34 @@ export function KanbanBoard({ board }: KanbanBoardProps) {
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault()
+    e.stopPropagation()
   }
 
-  const handleDrop = (targetColumnId: string, index: number) => {
+  const handleDrop = (targetColumnId: string, index: number, e?: React.DragEvent) => {
     if (!draggedTask) return
+    
+    if (e) {
+      e.preventDefault()
+      e.stopPropagation()
+    }
     
     moveTask(board.id, draggedTask.task.id, draggedTask.columnId, targetColumnId, index)
     setDraggedTask(null)
+    
+    // Blur the board to prevent it from following the mouse
+    const boardElement = document.querySelector(`[data-node-id="${board.id}"]`) as HTMLElement
+    if (boardElement) {
+      boardElement.blur()
+    }
+  }
+
+  const handleTaskDragStart = (e: React.DragEvent, task: KanbanTask, columnId: string) => {
+    e.stopPropagation()
+    handleDragStart(task, columnId)
+  }
+
+  const handleTaskDragEnd = (e: React.DragEvent) => {
+    e.stopPropagation()
   }
 
   const handleDoubleClick = () => {
@@ -146,13 +175,6 @@ export function KanbanBoard({ board }: KanbanBoardProps) {
     position: 'absolute' as const,
     left: board.position.x,
     top: board.position.y,
-    width: 'fit-content' as const,
-    maxWidth: '90vw',
-    border: '1px solid rgba(255, 255, 255, 0.2)',
-    boxShadow: '0 10px 40px rgba(0, 0, 0, 0.15)',
-    touchAction: 'none' as const,
-    cursor: isDragEnabled ? 'move' : 'default',
-    scrollMargin: 0,
     opacity: isDragging ? 0.5 : 1,
     zIndex: isDragging ? 1000 : 'auto',
   }
@@ -160,24 +182,67 @@ export function KanbanBoard({ board }: KanbanBoardProps) {
   return (
     <>
       <div
-      ref={setNodeRef}
-      {...listeners}
-      {...attributes}
-      style={style}
-      data-node-id={board.id}
-      onDoubleClick={handleDoubleClick}
-      onClick={() => setShowNodes(true)}
-      onBlur={() => setShowNodes(false)}
-      onMouseEnter={() => setShowNodes(true)}
-      onMouseLeave={() => setShowNodes(false)}
-      tabIndex={0}
-      onFocus={(e) => e.preventDefault()}
-      className={`rounded-3xl backdrop-blur-sm item-container ${board.color} ${
-        isSelected ? 'ring-2 ring-blue-400/30' : ''
-      } ${
-        isConnected ? 'ring-1 ring-blue-400/50' : ''
-      }`}
-    >
+        style={style}
+        data-node-id={board.id}
+      >
+        <Resizable
+          size={{ width, height }}
+          onResizeStop={handleResizeStop}
+          minWidth={600}
+          minHeight={350}
+          enable={{
+            top: false,
+            right: !isDragging,
+            bottom: !isDragging,
+            left: false,
+            topRight: false,
+            bottomRight: !isDragging,
+            bottomLeft: false,
+            topLeft: false,
+          }}
+          handleStyles={{
+            right: {
+              right: '-4px',
+              width: '8px',
+              cursor: 'ew-resize',
+            },
+            bottom: {
+              bottom: '-4px',
+              height: '8px',
+              cursor: 'ns-resize',
+            },
+            bottomRight: {
+              right: '-4px',
+              bottom: '-4px',
+              width: '12px',
+              height: '12px',
+              cursor: 'nwse-resize',
+            },
+          }}
+        >
+          <div
+            ref={setNodeRef}
+            {...listeners}
+            {...attributes}
+            onDoubleClick={handleDoubleClick}
+            onClick={() => setShowNodes(true)}
+            onBlur={() => setShowNodes(false)}
+            onMouseEnter={() => setShowNodes(true)}
+            onMouseLeave={() => setShowNodes(false)}
+            tabIndex={0}
+            onFocus={(e) => e.preventDefault()}
+            className={`w-full h-full rounded-3xl backdrop-blur-sm item-container overflow-hidden ${board.color} ${
+              isSelected ? 'ring-2 ring-blue-400/30' : ''
+            } ${
+              isConnected ? 'ring-1 ring-blue-400/50' : ''
+            }`}
+            style={{
+              border: '1px solid rgba(255, 255, 255, 0.2)',
+              boxShadow: '0 10px 40px rgba(0, 0, 0, 0.15)',
+              touchAction: 'none' as const,
+              cursor: isDragEnabled ? 'move' : 'default',
+            }}
+          >
         {isConnected && isVisible && (
           <div 
             className={`
@@ -194,7 +259,7 @@ export function KanbanBoard({ board }: KanbanBoardProps) {
         {/* Header */}
         <div
           className="flex items-center justify-between p-4 border-b border-zinc-200/50 relative"
-          style={{ borderTopLeftRadius: '1.5rem', borderTopRightRadius: '1.5rem', cursor: isDragEnabled ? 'move' : 'default' }}
+          style={{ borderTopLeftRadius: '1.5rem', borderTopRightRadius: '1.5rem' }}
         >
           <div className="flex items-center gap-3">
             <GripVertical size={18} className="text-gray-400" />
@@ -271,7 +336,7 @@ export function KanbanBoard({ board }: KanbanBoardProps) {
 
 
       {/* Connection Nodes */}
-        <div className="p-4 flex gap-4 overflow-x-auto" style={{ maxWidth: '85vw' }}>
+        <div className="p-4 flex gap-4 overflow-auto" style={{ maxHeight: 'calc(100% - 80px)' }}>
           {board.columns.map((column) => (
             <div
               key={column.id}
@@ -280,7 +345,7 @@ export function KanbanBoard({ board }: KanbanBoardProps) {
               onDragOver={handleDragOver}
               onDrop={(e) => {
                 e.preventDefault()
-                handleDrop(column.id, column.tasks.length)
+                handleDrop(column.id, column.tasks.length, e)
               }}
             >
               {/* Column Header */}
@@ -307,13 +372,16 @@ export function KanbanBoard({ board }: KanbanBoardProps) {
                   <div
                     key={task.id}
                     draggable
-                    onDragStart={() => handleDragStart(task, column.id)}
+                    onDragStart={(e) => handleTaskDragStart(e, task, column.id)}
+                    onDragEnd={handleTaskDragEnd}
                     onDragOver={handleDragOver}
                     onDrop={(e) => {
                       e.stopPropagation()
-                      handleDrop(column.id, index)
+                      handleDrop(column.id, index, e)
                     }}
-                    className="p-3 rounded-xl border cursor-move group bg-white border-zinc-200/60 hover:border-zinc-300 hover:shadow-md transition-all"
+                    className={`p-3 rounded-xl border cursor-grab active:cursor-grabbing group bg-white border-zinc-200/60 hover:border-zinc-300 hover:shadow-md transition-all ${
+                      draggedTask?.task.id === task.id ? 'opacity-50 scale-95' : ''
+                    }`}
                   >
                     <div className="flex items-start justify-between gap-2 mb-2">
                       <h5 className="font-medium text-sm flex-1 text-gray-800">
@@ -441,7 +509,9 @@ export function KanbanBoard({ board }: KanbanBoardProps) {
             <span className="text-sm font-semibold">Add Column</span>
           </button>
         )}
-    </div>
+          </div>
+        </Resizable>
+      </div>
     </>
   )
 }
