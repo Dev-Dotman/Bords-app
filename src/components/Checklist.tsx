@@ -319,6 +319,7 @@ export function Checklist({ id, title, items, position, color, width = 320, heig
     scrollMargin: 0,
     opacity: isDragging ? 0.5 : 1,
     zIndex: isDragging ? 1000 : 'auto',
+    borderRadius: `${24 * zoom}px`,
   }
 
   return (
