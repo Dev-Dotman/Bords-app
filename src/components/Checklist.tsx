@@ -1,4 +1,4 @@
-import { Trash2, Check, Timer, Clock, Pencil, Palette, ChevronDown } from 'lucide-react'
+import { Trash2, Check, Timer, Clock, Pencil, Palette, ChevronDown, ChevronUp } from 'lucide-react'
 import { useState, useEffect, useRef } from 'react'
 import { useDraggable } from '@dnd-kit/core'
 import { CSS } from '@dnd-kit/utilities'
@@ -11,6 +11,9 @@ import { TaskModal } from './TaskModal'
 import { useConnectionStore } from '../store/connectionStore';
 import { ConnectionNode } from './ConnectionNode'
 import { useGridStore } from '../store/gridStore'
+import { useZIndexStore } from '../store/zIndexStore'
+import { DeleteConfirmModal } from './DeleteConfirmModal'
+import { ColorPicker } from './ColorPicker'
 
 interface ChecklistProps {
   id: string
@@ -22,19 +25,10 @@ interface ChecklistProps {
   height?: number
 }
 
-const checklistColorOptions = [
-  { name: 'Yellow', value: 'bg-yellow-100/90' },
-  { name: 'Pink', value: 'bg-pink-100/90' },
-  { name: 'Blue', value: 'bg-blue-100/90' },
-  { name: 'Green', value: 'bg-green-100/90' },
-  { name: 'Purple', value: 'bg-purple-100/90' },
-  { name: 'Orange', value: 'bg-orange-100/90' },
-  { name: 'White', value: 'bg-white/90' },
-  { name: 'Gray', value: 'bg-zinc-100/90' },
-]
+
 
 export function Checklist({ id, title, items, position, color, width = 320, height = 400 }: ChecklistProps) {
-  const { updateChecklist, deleteChecklist, toggleItem, updateItem, toggleTimeTracking } = useChecklistStore()
+  const { updateChecklist, deleteChecklist, toggleItem, updateItem, toggleTimeTracking, reorderItem } = useChecklistStore()
   const isDragEnabled = useDragModeStore((state) => state.isDragEnabled)
   const [editingTask, setEditingTask] = useState<ChecklistItemType | null>(null);
   const [showAddTaskModal, setShowAddTaskModal] = useState(false);
@@ -43,10 +37,15 @@ export function Checklist({ id, title, items, position, color, width = 320, heig
   const [showNodes, setShowNodes] = useState(false)
   const [showColorPicker, setShowColorPicker] = useState(false)
   const [hasOverflow, setHasOverflow] = useState(false)
-  const itemsContainerRef = useRef<HTMLDivElement>(null)
+  const [isEditingTitle, setIsEditingTitle] = useState(false)
+   const [editTitleValue, setEditTitleValue] = useState(title)  
+   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)  
+   const itemsContainerRef = useRef<HTMLDivElement>(null)
   const zoom = useGridStore((state) => state.zoom)
   const connections = useConnectionStore((state) => state.connections)
   const isConnected = connections.some(conn => conn.fromId === id || conn.toId === id)
+  const { bringToFront } = useZIndexStore()
+  const zIndex = useZIndexStore((state) => state.zIndexMap[id] || 1)
 
   const handleResizeStop = (e: any, direction: any, ref: any, d: any) => {
     updateChecklist(id, {
@@ -318,7 +317,7 @@ export function Checklist({ id, title, items, position, color, width = 320, heig
     boxShadow: '0 10px 40px rgba(0, 0, 0, 0.15)',
     scrollMargin: 0,
     opacity: isDragging ? 0.5 : 1,
-    zIndex: isDragging ? 1000 : 'auto',
+    zIndex: isDragging ? 10000 : zIndex,
     borderRadius: `${24 * zoom}px`,
   }
 
@@ -327,6 +326,8 @@ export function Checklist({ id, title, items, position, color, width = 320, heig
       <div
         style={style}
         data-node-id={id}
+        data-item-id={id}
+        onMouseDown={() => bringToFront(id)}
       >
         <Resizable
           size={{ width, height }}
@@ -396,9 +397,46 @@ export function Checklist({ id, title, items, position, color, width = 320, heig
         <ConnectionNode id={id} type="checklist" position={position} side="left" isVisible={showNodes} />
         <ConnectionNode id={id} type="checklist" position={position} side="right" isVisible={showNodes} />
         <div className="flex justify-between items-start mb-5 relative">
-          <h3 style={{ fontSize: `${scaledFontSize * 1.25}px` }} className="font-semibold text-gray-800 checklist-title">
-            {title}
-          </h3>
+          {isEditingTitle ? (
+            <input
+              type="text"
+              value={editTitleValue}
+              onChange={(e) => setEditTitleValue(e.target.value)}
+              style={{ fontSize: `${scaledFontSize * 1.25}px` }}
+              className="font-semibold text-gray-800 bg-white/80 rounded-lg px-2 py-1 border border-zinc-300 focus:ring-2 focus:ring-blue-400/50 focus:outline-none flex-1"
+              autoFocus
+              onClick={(e) => e.stopPropagation()}
+              onMouseDown={(e) => e.stopPropagation()}
+              onKeyDown={(e) => {
+                e.stopPropagation()
+                if (e.key === 'Enter' && editTitleValue.trim()) {
+                  updateChecklist(id, { title: editTitleValue.trim() })
+                  setIsEditingTitle(false)
+                }
+                if (e.key === 'Escape') {
+                  setEditTitleValue(title)
+                  setIsEditingTitle(false)
+                }
+              }}
+              onBlur={() => {
+                if (editTitleValue.trim()) updateChecklist(id, { title: editTitleValue.trim() })
+                setIsEditingTitle(false)
+              }}
+            />
+          ) : (
+            <h3
+              style={{ fontSize: `${scaledFontSize * 1.25}px` }}
+              className="font-semibold text-gray-800 checklist-title cursor-pointer hover:bg-white/40 rounded-lg px-2 py-1 transition-colors"
+              onDoubleClick={(e) => {
+                e.stopPropagation()
+                setEditTitleValue(title)
+                setIsEditingTitle(true)
+              }}
+              title="Double-click to rename"
+            >
+              {title}
+            </h3>
+          )}
           <div className="flex items-center gap-1">
             <button
               onClick={(e) => {
@@ -411,10 +449,7 @@ export function Checklist({ id, title, items, position, color, width = 320, heig
               <Palette size={scaledIconSize} className="text-gray-400 group-hover:text-purple-500 transition-colors" />
             </button>
             <button
-              onClick={() => {
-                removeConnectionsByItemId(id)
-                deleteChecklist(id)
-              }}
+              onClick={() => setShowDeleteConfirm(true)}
               className="p-2.5 hover:bg-red-50 rounded-xl transition-all duration-200 hover:scale-110 group"
               title="Delete checklist"
             >
@@ -424,28 +459,12 @@ export function Checklist({ id, title, items, position, color, width = 320, heig
 
           {/* Color Picker */}
           {showColorPicker && (
-            <div
-              className="absolute top-full right-0 mt-2 bg-white/95 backdrop-blur-md rounded-2xl shadow-xl border border-black/10 p-3 z-50"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="text-xs font-medium text-gray-600 mb-2 text-center">Select Color</div>
-              <div className="grid grid-cols-3 gap-2">
-                {checklistColorOptions.map((colorOption) => (
-                  <button
-                    key={colorOption.value}
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      updateChecklist(id, { color: colorOption.value })
-                      setShowColorPicker(false)
-                    }}
-                    className={`w-10 h-10 rounded-lg border-2 transition-all duration-200 hover:scale-110 ${
-                      color === colorOption.value ? 'border-blue-500 scale-110 ring-2 ring-blue-200' : 'border-gray-300'
-                    } ${colorOption.value}`}
-                    title={colorOption.name}
-                  />
-                ))}
-              </div>
-            </div>
+            <ColorPicker
+              currentColor={color}
+              onSelect={(c) => updateChecklist(id, { color: c })}
+              onClose={() => setShowColorPicker(false)}
+              position="top-full right-0 mt-2"
+            />
           )}
         </div>
 
@@ -454,13 +473,33 @@ export function Checklist({ id, title, items, position, color, width = 320, heig
           className="space-y-3 checklist-tasks overflow-auto"
           style={{ maxHeight: 'calc(100% - 50px)' }}
         >
-          {items.map((item) => (
+          {items.map((item, index) => (
             <div 
               key={item.id} 
-              className="flex flex-col gap-2.5 bg-white/60 backdrop-blur-sm rounded-2xl task-item border border-white/50 hover:shadow-md transition-all duration-200"
+              className="flex flex-col gap-2.5 bg-white/60 backdrop-blur-sm rounded-2xl task-item border border-white/50 hover:shadow-md transition-all duration-200 group/item"
               style={{ padding: `${scaledSpacing * 0.75}px`, boxShadow: '0 2px 8px rgba(0, 0, 0, 0.08)' }}
             >
               <div className="flex items-start gap-3">
+                {/* Reorder buttons */}
+                <div className="flex flex-col gap-0.5 opacity-0 group-hover/item:opacity-100 transition-opacity mt-1">
+                  <button
+                    onClick={() => { if (index > 0) reorderItem(id, index, index - 1) }}
+                    disabled={index === 0}
+                    className="p-0.5 rounded hover:bg-black/10 disabled:opacity-20 transition-all"
+                    title="Move up"
+                  >
+                    <ChevronUp size={12} className="text-gray-500" />
+                  </button>
+                  <button
+                    onClick={() => { if (index < items.length - 1) reorderItem(id, index, index + 1) }}
+                    disabled={index === items.length - 1}
+                    className="p-0.5 rounded hover:bg-black/10 disabled:opacity-20 transition-all"
+                    title="Move down"
+                  >
+                    <ChevronDown size={12} className="text-gray-500" />
+                  </button>
+                </div>
+
                 <button
                   onClick={() => toggleItem(id, item.id)}
                   className={`
@@ -510,7 +549,7 @@ export function Checklist({ id, title, items, position, color, width = 320, heig
                       <Timer size={16} className={item.isTracking ? '' : 'text-gray-600'} />
                       <div className="absolute bottom-full right-0 mb-1
                                    hidden group-hover:block whitespace-nowrap
-                                   bg-zinc-800 text-white text-xs px-2 py-1 rounded-md shadow-lg z-10">
+                                   bg-zinc-800 text-white text-xs px-2 py-1 rounded-md shadow-lg z-[9999]">
                         {item.isTracking ? 'Stop tracking' : 'Start tracking'}
                       </div>
                     </button>
@@ -546,7 +585,7 @@ export function Checklist({ id, title, items, position, color, width = 320, heig
                       <Timer size={16} className={item.isTracking ? '' : 'text-gray-600'} />
                       <div className="absolute bottom-full right-0 mb-1
                                    hidden group-hover:block whitespace-nowrap
-                                   bg-zinc-800 text-white text-xs px-2 py-1 rounded-md shadow-lg z-10">
+                                   bg-zinc-800 text-white text-xs px-2 py-1 rounded-md shadow-lg z-[9999]">
                         {item.isTracking ? 'Stop tracking' : 'Start tracking'}
                       </div>
                     </button>
@@ -580,7 +619,7 @@ export function Checklist({ id, title, items, position, color, width = 320, heig
                     {!item.completed && getTimeStatus(item)?.isUrgent && (
                       <div className="absolute bottom-full right-0 mb-2
                                    bg-red-500 text-white px-3 py-1.5 rounded-lg
-                                   text-xs whitespace-nowrap shadow-lg animate-pulse z-50">
+                                   text-xs whitespace-nowrap shadow-lg animate-pulse z-[9999]">
                         {getTimeStatus(item)?.tooltip}
                         <div className="absolute bottom-0 right-2 transform translate-y-1/2
                                      border-4 border-transparent border-t-red-500"/>
@@ -623,7 +662,7 @@ export function Checklist({ id, title, items, position, color, width = 320, heig
                 })
               }
             }}
-            className="absolute bottom-8 right-6 flex items-center gap-1 text-xs font-medium cursor-pointer hover:opacity-70 transition-opacity z-10"
+            className="absolute bottom-8 right-6 flex items-center gap-1 text-xs font-medium cursor-pointer hover:opacity-70 transition-opacity z-[9999]"
             style={{ color: color.includes('white') || color.includes('yellow') ? '#666' : color.includes('blue') ? '#1e40af' : color.includes('green') ? '#15803d' : color.includes('purple') ? '#6b21a8' : color.includes('pink') ? '#be185d' : color.includes('orange') ? '#c2410c' : '#555' }}>
             More
             <ChevronDown size={14} />
@@ -676,6 +715,18 @@ export function Checklist({ id, title, items, position, color, width = 320, heig
           onSubmit={(data) => handleEditTask(editingTask.id, data)}
         />
       )}
+
+      <DeleteConfirmModal
+        isOpen={showDeleteConfirm}
+        onConfirm={() => {
+          removeConnectionsByItemId(id)
+          deleteChecklist(id)
+          setShowDeleteConfirm(false)
+        }}
+        onCancel={() => setShowDeleteConfirm(false)}
+        itemName={title}
+        itemType="checklist"
+      />
     </>
   )
 }

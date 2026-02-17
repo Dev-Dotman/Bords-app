@@ -29,18 +29,20 @@ import {
   Type,
   Eraser,
   X,
-  Layout
+  Layout,
+  Magnet,
 } from 'lucide-react'
 import { useTextStore } from '../store/textStore'
 import { useOrganizePanelStore } from '../store/organizePanelStore'
 import { useDrawingStore } from '../store/drawingStore'
 import { KanbanForm } from './KanbanForm'
+import { useZIndexStore } from '../store/zIndexStore'
 
 export function Dock() {
   const [hoveredItem, setHoveredItem] = useState<string | number | null>(null);
   const [showNoBoardModal, setShowNoBoardModal] = useState(false);
   const isDark = useThemeStore((state) => state.isDark)
-  const { isGridVisible, toggleGrid } = useGridStore()
+  const { isGridVisible, toggleGrid, snapEnabled, toggleSnap } = useGridStore()
   const [showNoteForm, setShowNoteForm] = useState(false)
   const [showChecklistForm, setShowChecklistForm] = useState(false)
   const [showKanbanForm, setShowKanbanForm] = useState(false)
@@ -57,6 +59,7 @@ export function Dock() {
   const addItemToBoard = useBoardStore((state) => state.addItemToBoard)
   const toggleBoardsPanel = useBoardStore((state) => state.toggleBoardsPanel)
   const { isDrawing, toggleDrawing, isErasing, toggleEraser } = useDrawingStore()
+  const bringToFront = useZIndexStore((state) => state.bringToFront)
 
   // Show modal when no board is selected
   useEffect(() => {
@@ -84,8 +87,9 @@ export function Dock() {
     const lines = text.split('\n').length
     const calculatedHeight = Math.max(100, (lines * lineHeight) + textPadding)
     
+    const noteId = Date.now().toString()
     addNote({
-      id: Date.now().toString(),
+      id: noteId,
       text,
       color,
       position: { 
@@ -95,6 +99,7 @@ export function Dock() {
       width: 192,
       height: calculatedHeight,
     })
+    bringToFront(noteId)
     setShowNoteForm(false)
   }
 
@@ -124,6 +129,7 @@ export function Dock() {
       fontSize: 16,
       color: isDark ? '#fff' : '#000'
     })
+    bringToFront(textId)
     
     // Add text to current board
     if (currentBoardId) {
@@ -151,6 +157,17 @@ export function Dock() {
       description: "Grid/Free layout",
       onClick: toggleGrid,
       isActive: isGridVisible 
+    },
+    { 
+      id: 41, 
+      icon: Magnet, 
+      label: "Snap to Grid", 
+      description: snapEnabled ? "Snapping ON" : "Snapping OFF",
+      onClick: toggleSnap,
+      isActive: snapEnabled,
+      customStyle: snapEnabled 
+        ? 'text-blue-500 hover:text-blue-600' 
+        : undefined
     },
     { id: 'separator-1', isSeparator: true },
     

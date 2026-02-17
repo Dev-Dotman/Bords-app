@@ -28,13 +28,13 @@ export function ExportModal() {
   const currentBoard = boards.find(b => b.id === currentBoardId)
   const boardName = currentBoard?.name || 'Untitled Board'
 
-  // Get items for current board - don't filter, get all items on the current board
-  const filteredNotes = notes
-  const filteredChecklists = checklists
-  const filteredTexts = texts
-  const filteredKanbans = kanbanBoards
-  const filteredMedias = medias
-  const filteredDrawings = drawings
+  // Get items for current board - filter by board membership
+  const filteredNotes = notes.filter(n => currentBoard?.notes.includes(n.id))
+  const filteredChecklists = checklists.filter(c => currentBoard?.checklists.includes(c.id))
+  const filteredTexts = texts.filter(t => currentBoard?.texts.includes(t.id))
+  const filteredKanbans = kanbanBoards.filter(k => currentBoard?.kanbans.includes(k.id))
+  const filteredMedias = medias.filter(m => currentBoard?.medias.includes(m.id))
+  const filteredDrawings = drawings.filter(d => currentBoard?.drawings.includes(d.id))
   const totalItems = filteredNotes.length + filteredChecklists.length + filteredTexts.length + filteredKanbans.length + filteredMedias.length + filteredDrawings.length
 
   // Generate preview when modal opens

@@ -48,12 +48,18 @@ export function MediaModal() {
     
     if (!url.trim()) return
 
+    // Position at viewport center with random offset to prevent stacking
+    const offsetX = (Math.random() - 0.5) * 120
+    const offsetY = (Math.random() - 0.5) * 120
     const newMedia = {
       url: url.trim(),
       title: title.trim() || undefined,
       description: description.trim() || undefined,
       type: mediaType,
-      position: { x: 100, y: 200 },
+      position: {
+        x: Math.max(50, Math.min(window.innerWidth - 300, window.innerWidth / 2 - 125 + offsetX)),
+        y: Math.max(50, Math.min(window.innerHeight - 400, window.innerHeight / 2 - 188 + offsetY)),
+      },
       width: mediaType === 'image' ? 250 : 210,
       height: mediaType === 'image' ? 375 : 118,
     }
@@ -117,12 +123,18 @@ export function MediaModal() {
       reader.onload = () => {
         const dataUrl = reader.result as string
         
+        // Position at viewport center with random offset to prevent stacking
+        const offsetX = (Math.random() - 0.5) * 120
+        const offsetY = (Math.random() - 0.5) * 120
         const newMedia = {
           url: dataUrl,
           title: title.trim() || selectedFile.name,
           description: description.trim() || undefined,
           type: mediaType,
-          position: { x: 100, y: 200 },
+          position: {
+            x: Math.max(50, Math.min(window.innerWidth - 300, window.innerWidth / 2 - 125 + offsetX)),
+            y: Math.max(50, Math.min(window.innerHeight - 400, window.innerHeight / 2 - 188 + offsetY)),
+          },
           width: mediaType === 'image' ? 250 : 210,
           height: mediaType === 'image' ? 375 : 118,
         }

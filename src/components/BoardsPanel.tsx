@@ -21,7 +21,7 @@ interface BoardsPanelProps {
 export function BoardsPanel({ isOpen, onClose }: BoardsPanelProps) {
   const { data: session } = useSession()
   const isDark = useThemeStore((state) => state.isDark)
-  const { currentBoardId, addBoard, deleteBoard, setCurrentBoard } = useBoardStore()
+  const { currentBoardId, addBoard, deleteBoard, setCurrentBoard, updateBoard } = useBoardStore()
   const currentUserId = useBoardStore((state) => state.currentUserId)
   const allBoards = useBoardStore((state) => state.boards)
   const userBoards = useMemo(() => 
@@ -41,6 +41,8 @@ export function BoardsPanel({ isOpen, onClose }: BoardsPanelProps) {
   const [newBoardName, setNewBoardName] = useState('')
   const [isCreating, setIsCreating] = useState(false)
   const [boardToDelete, setBoardToDelete] = useState<string | null>(null)
+  const [editingBoardId, setEditingBoardId] = useState<string | null>(null)
+  const [editingBoardName, setEditingBoardName] = useState('')
   const panelRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -114,8 +116,9 @@ export function BoardsPanel({ isOpen, onClose }: BoardsPanelProps) {
         ${isDark ? 'border-zinc-700/50' : 'border-zinc-200/50'}
       `}
     >
-      <div className="p-4 flex-1 overflow-y-auto">
-        <div className="flex justify-between items-center mb-6">
+      {/* Fixed Header & Create */}
+      <div className="p-4 pb-2">
+        <div className="flex justify-between items-center mb-4">
           <h2 className={`text-lg font-semibold ${isDark ? 'text-white' : 'text-gray-800'}`}>
             My Boards
           </h2>
@@ -129,25 +132,49 @@ export function BoardsPanel({ isOpen, onClose }: BoardsPanelProps) {
 
         {/* Create New Board */}
         {isCreating ? (
-          <div className="mb-4">
-            <input
-              type="text"
-              value={newBoardName}
-              onChange={(e) => setNewBoardName(e.target.value)}
-              placeholder="Board name"
-              className="w-full p-2 rounded-lg border focus:ring-2 focus:ring-blue-500 bg-white text-gray-900 placeholder:text-gray-500"
-              autoFocus
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') handleCreateBoard()
-                if (e.key === 'Escape') setIsCreating(false)
-              }}
-            />
+          <div className="mb-2">
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={newBoardName}
+                onChange={(e) => setNewBoardName(e.target.value)}
+                placeholder="Board name"
+                className="flex-1 p-2 rounded-lg border focus:ring-2 focus:ring-blue-500 bg-white text-gray-900 placeholder:text-gray-500"
+                autoFocus
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleCreateBoard()
+                  if (e.key === 'Escape') {
+                    setIsCreating(false)
+                    setNewBoardName('')
+                  }
+                }}
+              />
+              <button
+                onClick={handleCreateBoard}
+                disabled={!newBoardName.trim()}
+                className={`px-3 py-2 rounded-lg font-medium text-sm transition-colors ${
+                  newBoardName.trim()
+                    ? 'bg-blue-600 hover:bg-blue-700 text-white'
+                    : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                }`}
+              >
+                Create
+              </button>
+            </div>
+            <button
+              onClick={() => { setIsCreating(false); setNewBoardName('') }}
+              className={`mt-2 w-full p-1.5 text-xs rounded-lg transition-colors ${
+                isDark ? 'text-zinc-400 hover:text-white hover:bg-zinc-700' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'
+              }`}
+            >
+              Cancel
+            </button>
           </div>
         ) : (
           <button
             onClick={() => setIsCreating(true)}
             className={`
-              w-full p-3 rounded-lg mb-4 flex items-center gap-2
+              w-full p-3 rounded-lg mb-2 flex items-center gap-2
               ${isDark 
                 ? 'bg-zinc-700/50 hover:bg-zinc-700 text-white' 
                 : 'bg-gray-50 hover:bg-gray-100 text-gray-700'}
@@ -157,9 +184,18 @@ export function BoardsPanel({ isOpen, onClose }: BoardsPanelProps) {
             <span>New Board</span>
           </button>
         )}
+      </div>
 
-        {/* Boards List */}
+      {/* Scrollable Boards List */}
+      <div className="flex-1 overflow-y-auto px-4 pb-4">
         <div className="space-y-2">
+          {userBoards.length === 0 && (
+            <div className={`text-center py-8 ${isDark ? 'text-zinc-500' : 'text-gray-400'}`}>
+              <Layout size={32} className="mx-auto mb-2 opacity-50" />
+              <p className="text-sm">No boards yet</p>
+              <p className="text-xs mt-1">Create your first board to get started</p>
+            </div>
+          )}
           {userBoards.map((board) => (
             <div
               key={board.id}
@@ -174,27 +210,66 @@ export function BoardsPanel({ isOpen, onClose }: BoardsPanelProps) {
               `}
               onClick={() => handleBoardSelect(board.id)}
             >
-              <div className="flex items-center gap-3">
-                <Layout size={16} />
-                <div>
-                  <div className="font-medium">{board.name}</div>
+              <div className="flex items-center gap-3 flex-1 min-w-0">
+                <Layout size={16} className="shrink-0" />
+                <div className="min-w-0 flex-1">
+                  {editingBoardId === board.id ? (
+                    <input
+                      type="text"
+                      value={editingBoardName}
+                      onChange={(e) => setEditingBoardName(e.target.value)}
+                      className="w-full px-2 py-0.5 rounded border text-sm font-medium bg-white text-gray-900 focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                      autoFocus
+                      onClick={(e) => e.stopPropagation()}
+                      onKeyDown={(e) => {
+                        e.stopPropagation()
+                        if (e.key === 'Enter' && editingBoardName.trim()) {
+                          updateBoard(board.id, { name: editingBoardName.trim() })
+                          setEditingBoardId(null)
+                        }
+                        if (e.key === 'Escape') setEditingBoardId(null)
+                      }}
+                      onBlur={() => {
+                        if (editingBoardName.trim()) {
+                          updateBoard(board.id, { name: editingBoardName.trim() })
+                        }
+                        setEditingBoardId(null)
+                      }}
+                    />
+                  ) : (
+                    <div className="font-medium truncate">{board.name}</div>
+                  )}
                   <div className="text-xs opacity-60">
                     {format(new Date(board.lastModified), 'MMM d, yyyy')}
                   </div>
                 </div>
               </div>
               
-              {board.id === currentBoardId && (
+              <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setEditingBoardId(board.id)
+                    setEditingBoardName(board.name)
+                  }}
+                  className={`p-1.5 rounded-lg transition-colors ${
+                    isDark ? 'hover:bg-zinc-600' : 'hover:bg-gray-200'
+                  }`}
+                  title="Rename board"
+                >
+                  <Edit2 size={14} className={isDark ? 'text-zinc-400' : 'text-gray-500'} />
+                </button>
                 <button
                   onClick={(e) => {
                     e.stopPropagation()
                     setBoardToDelete(board.id)
                   }}
-                  className="opacity-0 group-hover:opacity-100 p-1.5 rounded-lg hover:bg-red-100/10"
+                  className="p-1.5 rounded-lg hover:bg-red-100/10"
+                  title="Delete board"
                 >
                   <Trash2 size={14} className="text-red-500" />
                 </button>
-              )}
+              </div>
             </div>
           ))}
         </div>

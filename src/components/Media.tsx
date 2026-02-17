@@ -1,6 +1,7 @@
 import { useState, useRef } from "react";
 import { useDraggable } from '@dnd-kit/core'
 import { CSS } from '@dnd-kit/utilities'
+import { Resizable } from 're-resizable'
 import {
   Trash2,
   ExternalLink,
@@ -13,6 +14,8 @@ import { useThemeStore } from "../store/themeStore";
 import { useDragModeStore } from "../store/dragModeStore";
 import { useConnectionStore } from "../store/connectionStore";
 import { ConnectionNode } from "./ConnectionNode";
+import { useZIndexStore } from '../store/zIndexStore'
+import { DeleteConfirmModal } from './DeleteConfirmModal'
 
 const mediaColorOptions = [
   { name: "White", value: "#FFFFFF" },
@@ -48,11 +51,13 @@ export function Media({
   const isVisible = useConnectionStore((state) => state.isVisible);
   const mediaRef = useRef<HTMLDivElement>(null);
   const [imageError, setImageError] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const { bringToFront } = useZIndexStore()
+  const zIndex = useZIndexStore((state) => state.zIndexMap[id] || 1)
 
   const handleDelete = (e: React.MouseEvent) => {
     e.stopPropagation();
-    removeConnectionsByItemId(id);
-    deleteMedia(id);
+    setShowDeleteConfirm(true);
   };
 
   const handleOpenUrl = (e: React.MouseEvent) => {
@@ -131,12 +136,11 @@ export function Media({
     position: 'absolute' as const,
     left: position.x,
     top: position.y,
-    width: type === "video" ? `${width * 1.4}px` : `${width}px`,
     cursor: isDragEnabled ? "move" : "default",
     scrollMargin: 0,
     touchAction: "none" as const,
     opacity: isDragging ? 0.5 : 1,
-    zIndex: isDragging ? 1000 : 'auto',
+    zIndex: isDragging ? 10000 : zIndex,
   }
 
   return (
@@ -150,9 +154,11 @@ export function Media({
           isSelected ? "ring-2 ring-blue-400/30" : ""
         }`}
         data-node-id={id}
+        data-item-id={id}
         tabIndex={0}
         onFocus={(e) => e.preventDefault()}
         onDoubleClick={handleDoubleClick}
+        onMouseDown={() => bringToFront(id)}
         onClick={() => setShowNodes(true)}
         onBlur={() => setShowNodes(false)}
         onMouseEnter={() => {
@@ -176,6 +182,34 @@ export function Media({
             data-connection-side={getConnectionSide()}
           />
         )}
+        <Resizable
+          size={{
+            width: type === "video" ? width * 1.4 : width,
+            height: type === "image" ? height + 8 : 'auto',
+          }}
+          minWidth={150}
+          minHeight={100}
+          enable={{
+            right: true,
+            bottom: true,
+            bottomRight: true,
+          }}
+          onResizeStop={(e, direction, ref, d) => {
+            const newWidth = type === "video" ? Math.round((width * 1.4 + d.width) / 1.4) : width + d.width
+            const newHeight = type === "image" ? height + d.height : height
+            updateMedia(id, { width: newWidth, height: newHeight })
+          }}
+          handleStyles={{
+            right: { width: '6px', right: '-3px', cursor: 'ew-resize' },
+            bottom: { height: '6px', bottom: '-3px', cursor: 'ns-resize' },
+            bottomRight: { width: '12px', height: '12px', right: '-4px', bottom: '-4px', cursor: 'nwse-resize' },
+          }}
+          handleClasses={{
+            right: 'opacity-0 hover:opacity-100 transition-opacity bg-blue-400/50 rounded-full',
+            bottom: 'opacity-0 hover:opacity-100 transition-opacity bg-blue-400/50 rounded-full',
+            bottomRight: 'opacity-0 hover:opacity-100 transition-opacity bg-blue-400 rounded-full',
+          }}
+        >
         <div
           className={`rounded-2xl border-2 overflow-hidden shadow-lg transition-all duration-200
           ${
@@ -349,7 +383,20 @@ export function Media({
             </div>
           )}
         </div>
+        </Resizable>
       </div>
+
+      <DeleteConfirmModal
+        isOpen={showDeleteConfirm}
+        onConfirm={() => {
+          removeConnectionsByItemId(id)
+          deleteMedia(id)
+          setShowDeleteConfirm(false)
+        }}
+        onCancel={() => setShowDeleteConfirm(false)}
+        itemName={title || 'Media'}
+        itemType="media"
+      />
     </>
   );
 }

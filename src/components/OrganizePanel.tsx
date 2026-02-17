@@ -3,46 +3,93 @@ import { useOrganizePanelStore } from '../store/organizePanelStore'
 import { useNoteStore } from '../store/stickyNoteStore'
 import { useChecklistStore } from '../store/checklistStore'
 import { useTextStore } from '../store/textStore'
-import { StickyNote, ListChecks, Type, Eye, Trash2, X } from 'lucide-react'
+import { StickyNote, ListChecks, Type, Eye, Trash2, X, LayoutGrid, Image, Pencil } from 'lucide-react'
 import { useThemeStore } from '../store/themeStore'
-import { useRef, useEffect } from 'react'
+import { useRef, useEffect, useState } from 'react'
 import { useBoardStore } from '../store/boardStore'
+import { useKanbanStore } from '../store/kanbanStore'
+import { useMediaStore } from '../store/mediaStore'
+import { useDrawingStore } from '../store/drawingStore'
+import { useConnectionStore } from '../store/connectionStore'
+import { useZIndexStore } from '../store/zIndexStore'
+import { DeleteConfirmModal } from './DeleteConfirmModal'
 
 export function OrganizePanel() {
   const { isOpen, togglePanel } = useOrganizePanelStore()
   const isDark = useThemeStore((state) => state.isDark)
   const notes = useNoteStore((state) => state.notes)
-  const { deleteNote, updateNote } = useNoteStore()
+  const { deleteNote } = useNoteStore()
   const checklists = useChecklistStore((state) => state.checklists)
-  const { deleteChecklist, updateChecklist } = useChecklistStore()
+  const { deleteChecklist } = useChecklistStore()
   const texts = useTextStore((state) => state.texts)
-  const { deleteText, updateText } = useTextStore()
+  const { deleteText } = useTextStore()
+  const kanbanBoards = useKanbanStore((state) => state.boards)
+  const { deleteBoard: deleteKanban } = useKanbanStore()
+  const medias = useMediaStore((state) => state.medias)
+  const { deleteMedia } = useMediaStore()
+  const drawings = useDrawingStore((state) => state.drawings)
+  const { deleteDrawing } = useDrawingStore()
+  const { removeConnectionsByItemId } = useConnectionStore()
+  const { bringToFront } = useZIndexStore()
+  const { removeItemFromBoard } = useBoardStore()
   const panelRef = useRef<HTMLDivElement>(null)
   const currentBoard = useBoardStore((state) => 
     state.boards.find(board => board.id === state.currentBoardId)
   )
+  const currentBoardId = useBoardStore((state) => state.currentBoardId)
+
+  // Delete confirmation state
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string; type: string } | null>(null)
 
   // Filter items by current board
   const boardNotes = notes.filter(note => currentBoard?.notes.includes(note.id))
   const boardChecklists = checklists.filter(checklist => currentBoard?.checklists.includes(checklist.id))
   const boardTexts = texts.filter(text => currentBoard?.texts.includes(text.id))
+  const boardKanbans = kanbanBoards.filter(kb => currentBoard?.kanbans.includes(kb.id))
+  const boardMedias = medias.filter(media => currentBoard?.medias.includes(media.id))
+  const boardDrawings = drawings.filter(drawing => currentBoard?.drawings.includes(drawing.id))
 
-  const bringToView = (type: 'note' | 'checklist' | 'text', id: string) => {
-    const padding = 50
-    const randomX = Math.random() * (window.innerWidth - 300 - padding * 2) + padding
-    const randomY = Math.random() * (window.innerHeight - 200 - padding * 2) + padding
-    
+  // Scroll viewport to an item's current position instead of teleporting it
+  const bringToView = (id: string) => {
+    const el = document.querySelector(`[data-item-id="${id}"]`) as HTMLElement | null
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' })
+      bringToFront(id)
+    }
+  }
+
+  // Perform the actual delete after confirmation
+  const confirmDelete = () => {
+    if (!deleteTarget || !currentBoardId) return
+    const { id, type } = deleteTarget
+    removeConnectionsByItemId(id)
     switch (type) {
       case 'note':
-        updateNote(id, { position: { x: randomX, y: randomY } })
+        deleteNote(id)
+        removeItemFromBoard(currentBoardId, 'notes', id)
         break
       case 'checklist':
-        updateChecklist(id, { position: { x: randomX, y: randomY } })
+        deleteChecklist(id)
+        removeItemFromBoard(currentBoardId, 'checklists', id)
         break
       case 'text':
-        updateText(id, { position: { x: randomX, y: randomY } })
+        deleteText(id)
+        removeItemFromBoard(currentBoardId, 'texts', id)
+        break
+      case 'kanban':
+        deleteKanban(id)
+        removeItemFromBoard(currentBoardId, 'kanbans', id)
+        break
+      case 'media':
+        deleteMedia(id)
+        removeItemFromBoard(currentBoardId, 'medias', id)
+        break
+      case 'drawing':
+        deleteDrawing(id)
+        removeItemFromBoard(currentBoardId, 'drawings', id)
         break
     }
+    setDeleteTarget(null)
   }
 
   useEffect(() => {
@@ -61,6 +108,32 @@ export function OrganizePanel() {
     }
   }, [isOpen, togglePanel])
 
+  // Reusable item row
+  const ItemRow = ({ id, label, sublabel, type }: { id: string; label: string; sublabel?: string; type: string }) => (
+    <div className={`p-3 rounded-lg flex items-center justify-between ${isDark ? 'bg-zinc-700/50' : 'bg-gray-50'}`}>
+      <div className="flex-1 min-w-0 mr-2">
+        <p className={`text-sm truncate ${isDark ? 'text-white' : 'text-gray-700'}`}>{label}</p>
+        {sublabel && <p className={`text-xs ${isDark ? 'text-zinc-400' : 'text-gray-500'}`}>{sublabel}</p>}
+      </div>
+      <div className="flex gap-1 shrink-0">
+        <button
+          onClick={() => bringToView(id)}
+          className="p-1.5 rounded-lg hover:bg-white/10"
+          title="Bring to view"
+        >
+          <Eye size={14} className={isDark ? 'text-white' : 'text-gray-600'} />
+        </button>
+        <button
+          onClick={() => setDeleteTarget({ id, name: label, type })}
+          className="p-1.5 rounded-lg hover:bg-red-100/10"
+          title={`Delete ${type}`}
+        >
+          <Trash2 size={14} className="text-red-500" />
+        </button>
+      </div>
+    </div>
+  )
+
   return (
     <motion.div
       ref={panelRef}
@@ -74,7 +147,7 @@ export function OrganizePanel() {
         ${isDark ? 'border-zinc-700/50' : 'border-zinc-200/50'}
       `}
     >
-      <div className="p-4">
+      <div className="p-4 h-full overflow-y-auto">
         <div className="flex justify-between items-center mb-6">
           <h2 className={`text-lg font-semibold ${isDark ? 'text-white' : 'text-gray-800'}`}>
             Organize Items
@@ -87,7 +160,7 @@ export function OrganizePanel() {
           </button>
         </div>
 
-        <div className="space-y-6">
+        <div className="space-y-6 pb-8">
           {/* Sticky Notes */}
           <section>
             <h3 className={`text-sm font-medium mb-2 flex items-center gap-2 ${isDark ? 'text-white' : 'text-gray-600'}`}>
@@ -96,34 +169,11 @@ export function OrganizePanel() {
             </h3>
             <div className="space-y-2">
               {boardNotes.map(note => (
-                <div 
-                  key={note.id}
-                  className={`
-                    p-3 rounded-lg flex items-center justify-between
-                    ${isDark ? 'bg-zinc-700/50' : 'bg-gray-50'}
-                  `}
-                >
-                  <p className={`text-sm truncate flex-1 ${isDark ? 'text-white' : 'text-gray-700'}`}>
-                    {note.text || 'Untitled Note'}
-                  </p>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => bringToView('note', note.id)}
-                      className="p-1.5 rounded-lg hover:bg-white/10"
-                      title="Bring to view"
-                    >
-                      <Eye size={14} className={isDark ? 'text-white' : 'text-gray-600'} />
-                    </button>
-                    <button
-                      onClick={() => deleteNote(note.id)}
-                      className="p-1.5 rounded-lg hover:bg-red-100/10"
-                      title="Delete note"
-                    >
-                      <Trash2 size={14} className="text-red-500" />
-                    </button>
-                  </div>
-                </div>
+                <ItemRow key={note.id} id={note.id} label={note.text || 'Untitled Note'} type="note" />
               ))}
+              {boardNotes.length === 0 && (
+                <p className={`text-xs italic ${isDark ? 'text-zinc-500' : 'text-gray-400'}`}>No sticky notes</p>
+              )}
             </div>
           </section>
 
@@ -135,39 +185,43 @@ export function OrganizePanel() {
             </h3>
             <div className="space-y-2">
               {boardChecklists.map(list => (
-                <div 
-                  key={list.id}
-                  className={`
-                    p-3 rounded-lg flex items-center justify-between
-                    ${isDark ? 'bg-zinc-700/50' : 'bg-gray-50'}
-                  `}
-                >
-                  <div className="flex-1">
-                    <p className={`text-sm font-medium ${isDark ? 'text-white' : 'text-gray-700'}`}>
-                      {list.title}
-                    </p>
-                    <p className={`text-xs ${isDark ? 'text-zinc-400' : 'text-gray-500'}`}>
-                      {list.items.length} items
-                    </p>
-                  </div>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => bringToView('checklist', list.id)}
-                      className="p-1.5 rounded-lg hover:bg-white/10"
-                      title="Bring to view"
-                    >
-                      <Eye size={14} className={isDark ? 'text-white' : 'text-gray-600'} />
-                    </button>
-                    <button
-                      onClick={() => deleteChecklist(list.id)}
-                      className="p-1.5 rounded-lg hover:bg-red-100/10"
-                      title="Delete checklist"
-                    >
-                      <Trash2 size={14} className="text-red-500" />
-                    </button>
-                  </div>
-                </div>
+                <ItemRow key={list.id} id={list.id} label={list.title} sublabel={`${list.items.length} items`} type="checklist" />
               ))}
+              {boardChecklists.length === 0 && (
+                <p className={`text-xs italic ${isDark ? 'text-zinc-500' : 'text-gray-400'}`}>No checklists</p>
+              )}
+            </div>
+          </section>
+
+          {/* Kanban Boards */}
+          <section>
+            <h3 className={`text-sm font-medium mb-2 flex items-center gap-2 ${isDark ? 'text-white' : 'text-gray-600'}`}>
+              <LayoutGrid size={16} />
+              Kanban Boards ({boardKanbans.length})
+            </h3>
+            <div className="space-y-2">
+              {boardKanbans.map(kb => (
+                <ItemRow key={kb.id} id={kb.id} label={kb.title} sublabel={`${kb.columns.length} columns`} type="kanban" />
+              ))}
+              {boardKanbans.length === 0 && (
+                <p className={`text-xs italic ${isDark ? 'text-zinc-500' : 'text-gray-400'}`}>No kanban boards</p>
+              )}
+            </div>
+          </section>
+
+          {/* Media */}
+          <section>
+            <h3 className={`text-sm font-medium mb-2 flex items-center gap-2 ${isDark ? 'text-white' : 'text-gray-600'}`}>
+              <Image size={16} />
+              Media ({boardMedias.length})
+            </h3>
+            <div className="space-y-2">
+              {boardMedias.map(media => (
+                <ItemRow key={media.id} id={media.id} label={media.title || `${media.type} media`} sublabel={media.type} type="media" />
+              ))}
+              {boardMedias.length === 0 && (
+                <p className={`text-xs italic ${isDark ? 'text-zinc-500' : 'text-gray-400'}`}>No media</p>
+              )}
             </div>
           </section>
 
@@ -179,38 +233,42 @@ export function OrganizePanel() {
             </h3>
             <div className="space-y-2">
               {boardTexts.map(text => (
-                <div 
-                  key={text.id}
-                  className={`
-                    p-3 rounded-lg flex items-center justify-between
-                    ${isDark ? 'bg-zinc-700/50' : 'bg-gray-50'}
-                  `}
-                >
-                  <p className={`text-sm truncate flex-1 ${isDark ? 'text-white' : 'text-gray-700'}`}>
-                    {text.text || 'Untitled Text'}
-                  </p>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => bringToView('text', text.id)}
-                      className="p-1.5 rounded-lg hover:bg-white/10"
-                      title="Bring to view"
-                    >
-                      <Eye size={14} className={isDark ? 'text-white' : 'text-gray-600'} />
-                    </button>
-                    <button
-                      onClick={() => deleteText(text.id)}
-                      className="p-1.5 rounded-lg hover:bg-red-100/10"
-                      title="Delete text"
-                    >
-                      <Trash2 size={14} className="text-red-500" />
-                    </button>
-                  </div>
-                </div>
+                <ItemRow key={text.id} id={text.id} label={text.text || 'Untitled Text'} type="text" />
               ))}
+              {boardTexts.length === 0 && (
+                <p className={`text-xs italic ${isDark ? 'text-zinc-500' : 'text-gray-400'}`}>No text elements</p>
+              )}
+            </div>
+          </section>
+
+          {/* Drawings */}
+          <section>
+            <h3 className={`text-sm font-medium mb-2 flex items-center gap-2 ${isDark ? 'text-white' : 'text-gray-600'}`}>
+              <Pencil size={16} />
+              Drawings ({boardDrawings.length})
+            </h3>
+            <div className="space-y-2">
+              {boardDrawings.map(drawing => (
+                <ItemRow key={drawing.id} id={drawing.id} label={`Drawing ${drawing.id.slice(0, 6)}`} sublabel={`${drawing.paths.length} paths`} type="drawing" />
+              ))}
+              {boardDrawings.length === 0 && (
+                <p className={`text-xs italic ${isDark ? 'text-zinc-500' : 'text-gray-400'}`}>No drawings</p>
+              )}
             </div>
           </section>
         </div>
       </div>
+
+      {/* Delete confirmation modal */}
+      {deleteTarget && (
+        <DeleteConfirmModal
+          isOpen={true}
+          onConfirm={confirmDelete}
+          onCancel={() => setDeleteTarget(null)}
+          itemName={deleteTarget.name}
+          itemType={deleteTarget.type}
+        />
+      )}
     </motion.div>
   )
 }

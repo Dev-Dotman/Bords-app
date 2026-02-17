@@ -5,6 +5,7 @@ import { useKanbanStore } from '../store/kanbanStore'
 import { useThemeStore } from '../store/themeStore'
 import { useBoardStore } from '../store/boardStore'
 import { CHECKLIST_COLORS } from '../store/checklistStore'
+import { useZIndexStore } from '../store/zIndexStore'
 
 interface KanbanFormProps {
   onClose: () => void
@@ -16,6 +17,7 @@ export function KanbanForm({ onClose, position }: KanbanFormProps) {
   const addBoard = useKanbanStore((state) => state.addBoard)
   const currentBoardId = useBoardStore((state) => state.currentBoardId)
   const addItemToBoard = useBoardStore((state) => state.addItemToBoard)
+  const bringToFront = useZIndexStore((state) => state.bringToFront)
   
   const [title, setTitle] = useState('')
   const [selectedColor, setSelectedColor] = useState('bg-purple-100/90')
@@ -41,6 +43,7 @@ export function KanbanForm({ onClose, position }: KanbanFormProps) {
     }
 
     addBoard(newBoard)
+    bringToFront(kanbanId)
     
     if (currentBoardId) {
       addItemToBoard(currentBoardId, 'kanbans', kanbanId)

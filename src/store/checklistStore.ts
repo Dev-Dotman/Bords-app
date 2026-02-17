@@ -40,6 +40,7 @@ interface ChecklistStore {
   toggleItem: (checklistId: string, itemId: string) => void
   updateItem: (checklistId: string, itemId: string, updates: Partial<ChecklistItem>) => void
   toggleTimeTracking: (checklistId: string, itemId: string) => void
+  reorderItem: (checklistId: string, fromIndex: number, toIndex: number) => void
 }
 
 export const useChecklistStore = create<ChecklistStore>()(
@@ -111,6 +112,17 @@ export const useChecklistStore = create<ChecklistStore>()(
                 }
               : list
           ),
+        })),
+
+      reorderItem: (checklistId, fromIndex, toIndex) =>
+        set((state) => ({
+          checklists: state.checklists.map((list) => {
+            if (list.id !== checklistId) return list
+            const newItems = [...list.items]
+            const [moved] = newItems.splice(fromIndex, 1)
+            newItems.splice(toIndex, 0, moved)
+            return { ...list, items: newItems }
+          }),
         })),
     }),
     {

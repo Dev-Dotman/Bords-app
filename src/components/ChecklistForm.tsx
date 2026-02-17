@@ -4,6 +4,7 @@ import { useChecklistStore, CHECKLIST_COLORS } from '../store/checklistStore'
 import toast from 'react-hot-toast'
 import { useBoardStore } from '../store/boardStore'
 import { useThemeStore } from '../store/themeStore'
+import { useZIndexStore } from '../store/zIndexStore'
 
 interface TaskItem {
   id: string
@@ -30,6 +31,7 @@ export function ChecklistForm({ onClose, position }: ChecklistFormProps) {
   const currentBoardId = useBoardStore((state) => state.currentBoardId)
   const addItemToBoard = useBoardStore((state) => state.addItemToBoard)
   const isDark = useThemeStore((state) => state.isDark)
+  const bringToFront = useZIndexStore((state) => state.bringToFront)
 
   const validateDateTime = (date: string, time: string) => {
     if ((date && !time) || (!date && time)) {
@@ -87,6 +89,7 @@ export function ChecklistForm({ onClose, position }: ChecklistFormProps) {
       addItemToBoard(currentBoardId, 'checklists', checklistId)
     }
 
+    bringToFront(checklistId)
     onClose()
   }
 

@@ -7,12 +7,15 @@ import { Trash2, RotateCcw, RotateCw, ZoomIn, ZoomOut, Palette } from 'lucide-re
 import { useGridStore } from '../store/gridStore'
 import { useThemeStore } from '../store/themeStore'
 import { useConnectionStore } from '../store/connectionStore'
+import { useZIndexStore } from '../store/zIndexStore'
 
 export function Text({ id, text, position, fontSize, color, rotation = 0 }: TextElement & { rotation?: number }) {
   const [isEditing, setIsEditing] = useState(false)
   const [isSelected, setIsSelected] = useState(false)
   const [isHovered, setIsHovered] = useState(false)
   const [showColorPicker, setShowColorPicker] = useState(false)
+  const { bringToFront } = useZIndexStore()
+  const zIndex = useZIndexStore((state) => state.zIndexMap[id] || 1)
   const textRef = useRef<HTMLDivElement>(null);
   const { updateText, deleteText } = useTextStore()
   const isDragEnabled = useDragModeStore((state) => state.isDragEnabled)
@@ -71,7 +74,7 @@ export function Text({ id, text, position, fontSize, color, rotation = 0 }: Text
     WebkitUserSelect: 'none' as const,
     scrollMargin: 0,
     opacity: isDragging ? 0.5 : 1,
-    zIndex: isDragging ? 1000 : 'auto',
+    zIndex: isDragging ? 10000 : zIndex,
   }
 
   return (
@@ -88,10 +91,12 @@ export function Text({ id, text, position, fontSize, color, rotation = 0 }: Text
       onClick={(e) => {
         e.stopPropagation();
         setIsSelected(true);
+        bringToFront(id);
       }}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
       data-text-id={id}
+      data-item-id={id}
       onFocus={(e) => e.preventDefault()}
     >
       {isEditing ? (
@@ -142,6 +147,10 @@ export function Text({ id, text, position, fontSize, color, rotation = 0 }: Text
               >
                 <ZoomOut size={16} className="text-gray-700" />
               </button>
+
+              <span className="text-xs font-medium text-gray-600 min-w-[32px] text-center select-none" title="Font size">
+                {fontSize}px
+              </span>
               
               <button
                 onClick={(e) => {

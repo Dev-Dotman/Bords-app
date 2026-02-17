@@ -33,6 +33,34 @@ import { useDrawingStore } from "@/store/drawingStore";
 import { BackgroundModal } from "@/components/BackgroundModal";
 import { ConnectionLineModal } from "@/components/ConnectionLineModal";
 import { useGridStore } from "@/store/gridStore";
+import { useDragModeStore } from "@/store/dragModeStore";
+import { usePresentationStore } from "@/store/presentationStore";
+
+// Presentation mode hint that fades out
+function PresentationHint({ onDismiss }: { onDismiss: () => void }) {
+  const [visible, setVisible] = useState(true)
+  useEffect(() => {
+    const timer = setTimeout(() => setVisible(false), 3000)
+    return () => clearTimeout(timer)
+  }, [])
+  if (!visible) return null
+  return (
+    <div className="fixed inset-0 z-[100] pointer-events-none flex items-center justify-center">
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0 }}
+        transition={{ duration: 0.4 }}
+        className="bg-black/70 text-white px-6 py-4 rounded-2xl backdrop-blur-md shadow-2xl text-center"
+        style={{ animation: 'fadeOut 1s ease-in 2s forwards' }}
+      >
+        <p className="text-lg font-semibold mb-1">Presentation Mode</p>
+        <p className="text-sm text-white/70">Press <kbd className="px-1.5 py-0.5 bg-white/20 rounded text-xs">ESC</kbd> to exit</p>
+      </motion.div>
+      <style>{`@keyframes fadeOut { to { opacity: 0; } }`}</style>
+    </div>
+  )
+}
 
 export default function Home() {
   const router = useRouter();
@@ -79,27 +107,28 @@ export default function Home() {
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, delta } = event;
     const data = active.data.current;
+    const snap = useGridStore.getState().snapValue;
     
     if (data?.type === 'note') {
       const padding = 16;
       const scaledWidth = 192 * (useGridStore.getState().zoom);
       const newPosition = {
-        x: Math.max(padding, Math.min(window.innerWidth - (scaledWidth + padding), data.position.x + delta.x)),
-        y: data.position.y + delta.y
+        x: snap(Math.max(padding, Math.min(window.innerWidth - (scaledWidth + padding), data.position.x + delta.x))),
+        y: snap(data.position.y + delta.y)
       };
       updateNote(data.id, { position: newPosition });
     } else if (data?.type === 'checklist') {
       const padding = 16;
       const scaledWidth = 320 * (useGridStore.getState().zoom);
       const newPosition = {
-        x: Math.max(padding, Math.min(window.innerWidth - (scaledWidth + padding), data.position.x + delta.x)),
-        y: data.position.y + delta.y
+        x: snap(Math.max(padding, Math.min(window.innerWidth - (scaledWidth + padding), data.position.x + delta.x))),
+        y: snap(data.position.y + delta.y)
       };
       updateChecklist(data.id, { position: newPosition });
     } else if (data?.type === 'media') {
       const newPosition = {
-        x: data.position.x + delta.x,
-        y: data.position.y + delta.y
+        x: snap(data.position.x + delta.x),
+        y: snap(data.position.y + delta.y)
       };
       updateMedia(data.id, { position: newPosition });
     } else if (data?.type === 'text') {
@@ -107,19 +136,22 @@ export default function Home() {
       const baseWidth = 200;
       const safeWidth = Math.max(baseWidth, texts.find(t => t.id === data.id)?.text.length || 0 * data.fontSize * 0.6);
       const newPosition = {
-        x: Math.max(padding, Math.min(window.innerWidth - (safeWidth + padding), data.position.x + delta.x)),
-        y: data.position.y + delta.y
+        x: snap(Math.max(padding, Math.min(window.innerWidth - (safeWidth + padding), data.position.x + delta.x))),
+        y: snap(data.position.y + delta.y)
       };
       updateText(data.id, { position: newPosition });
     } else if (data?.type === 'kanban') {
       const padding = 16;
       const newPosition = {
-        x: Math.max(padding, Math.min(window.innerWidth - 800, data.position.x + delta.x)),
-        y: data.position.y + delta.y
+        x: snap(Math.max(padding, Math.min(window.innerWidth - 800, data.position.x + delta.x))),
+        y: snap(data.position.y + delta.y)
       };
       updateBoardPosition(data.id, newPosition);
     }
   };
+
+  const isDragEnabled = useDragModeStore((state) => state.isDragEnabled);
+  const { isPresentationMode, setPresentationMode } = usePresentationStore();
 
   // Detect mobile device
   useEffect(() => {
@@ -141,6 +173,22 @@ export default function Home() {
       setCurrentUserId(session.user.email);
     }
   }, [status, router, session, setCurrentUserId]);
+
+  // Drag mode cursor
+  useEffect(() => {
+    document.body.style.cursor = isDragEnabled ? 'grab' : '';
+    return () => { document.body.style.cursor = '' }
+  }, [isDragEnabled]);
+
+  // Presentation mode: Escape key to exit
+  useEffect(() => {
+    if (!isPresentationMode) return
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setPresentationMode(false)
+    }
+    window.addEventListener('keydown', handleKey)
+    return () => window.removeEventListener('keydown', handleKey)
+  }, [isPresentationMode, setPresentationMode]);
 
   // Listen for board deletion to cleanup associated items
   useEffect(() => {
@@ -264,6 +312,11 @@ export default function Home() {
           backgroundRepeat: "no-repeat",
         }}
       >
+      {/* Presentation mode entry hint */}
+      {isPresentationMode && (
+        <PresentationHint onDismiss={() => {}} />
+      )}
+
       <div className="relative min-h-[170vh]">
         <GridBackground
           hoveredCell={hoveredCell}
@@ -276,9 +329,9 @@ export default function Home() {
           className="fixed inset-0 overflow-auto pb-[50vh]"
           data-board-canvas
         >
-          {/* Board Name - Centered with Glassmorphism */}
+          {/* Board Name - Positioned between TopBar and right controls */}
           <div
-            className="fixed top-5 left-1/2 -translate-x-1/2 flex items-center gap-2 pointer-events-auto z-10"
+            className="fixed top-5 left-1/2 -translate-x-1/2 flex items-center gap-2 pointer-events-auto z-[9999] max-[1200px]:left-auto max-[1200px]:right-[35%] max-[1200px]:translate-x-0"
             data-board-item
           >
             <div

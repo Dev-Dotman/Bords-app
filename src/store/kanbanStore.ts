@@ -8,6 +8,7 @@ interface KanbanStore {
   removeBoard: (id: string) => void
   updateBoardPosition: (id: string, position: { x: number; y: number }) => void
   updateBoardColor: (id: string, color: string) => void
+  updateBoardTitle: (id: string, title: string) => void
   updateBoardSize: (id: string, width: number, height: number) => void
   addTask: (boardId: string, columnId: string, task: KanbanTask) => void
   moveTask: (boardId: string, taskId: string, fromColumnId: string, toColumnId: string, newIndex: number) => void
@@ -42,6 +43,12 @@ export const useKanbanStore = create<KanbanStore>()(persist(
     )
   })),
   
+  updateBoardTitle: (id, title) => set((state) => ({
+    boards: state.boards.map((b) =>
+      b.id === id ? { ...b, title } : b
+    )
+  })),
+  
   updateBoardSize: (id, width, height) => set((state) => ({
     boards: state.boards.map((b) =>
       b.id === id ? { ...b, width, height } : b
@@ -71,7 +78,21 @@ export const useKanbanStore = create<KanbanStore>()(persist(
       const task = fromColumn?.tasks.find((t) => t.id === taskId)
       
       if (!task) return board
-      
+
+      // Same column: reorder in place
+      if (fromColumnId === toColumnId) {
+        return {
+          ...board,
+          columns: board.columns.map((col) => {
+            if (col.id !== fromColumnId) return col
+            const tasks = col.tasks.filter((t) => t.id !== taskId)
+            tasks.splice(newIndex, 0, task)
+            return { ...col, tasks }
+          })
+        }
+      }
+
+      // Different columns: remove from source, insert into target
       return {
         ...board,
         columns: board.columns.map((col) => {

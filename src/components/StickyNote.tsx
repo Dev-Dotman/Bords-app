@@ -9,20 +9,13 @@ import { useConnectionStore } from '../store/connectionStore';
 import { ConnectionNode } from './ConnectionNode'
 import { useGridStore } from '../store/gridStore';
 import { StickyNoteEditModal } from './StickyNoteEditModal'
+import { useZIndexStore } from '../store/zIndexStore'
+import { DeleteConfirmModal } from './DeleteConfirmModal'
+import { ColorPicker } from './ColorPicker'
 
 interface StickyNoteProps extends StickyNoteType {}
 
-const colorOptions = [
-  { name: 'Yellow', value: 'bg-yellow-200/80' },
-  { name: 'Pink', value: 'bg-pink-200/80' },
-  { name: 'Blue', value: 'bg-blue-200/80' },
-  { name: 'Green', value: 'bg-green-200/80' },
-  { name: 'Purple', value: 'bg-purple-200/80' },
-  { name: 'Orange', value: 'bg-orange-200/80' },
-  { name: 'Red', value: 'bg-red-200/80' },
-  { name: 'Teal', value: 'bg-teal-200/80' },
-  { name: 'Indigo', value: 'bg-indigo-200/80' },
-]
+
 
 export function StickyNote({ id, text, position, color, width = 192, height }: StickyNoteProps) {
   const [showControls, setShowControls] = useState(false)
@@ -30,6 +23,7 @@ export function StickyNote({ id, text, position, color, width = 192, height }: S
   const [showEditModal, setShowEditModal] = useState(false)
   const [showColorPicker, setShowColorPicker] = useState(false)
   const [hasOverflow, setHasOverflow] = useState(false)
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const textContainerRef = useRef<HTMLDivElement>(null)
   const { updateNote, deleteNote } = useNoteStore()
   const isDragEnabled = useDragModeStore((state) => state.isDragEnabled)
@@ -38,6 +32,8 @@ export function StickyNote({ id, text, position, color, width = 192, height }: S
   const zoom = useGridStore((state) => state.zoom)
   const connections = useConnectionStore((state) => state.connections)
   const isConnected = connections.some(conn => conn.fromId === id || conn.toId === id)
+  const { bringToFront, getZIndex } = useZIndexStore()
+  const zIndex = useZIndexStore((state) => state.zIndexMap[id] || 1)
 
   // Calculate minimum height based on text content
   const calculateMinHeight = () => {
@@ -124,7 +120,7 @@ export function StickyNote({ id, text, position, color, width = 192, height }: S
     touchAction: 'none' as const,
     scrollMargin: 0,
     opacity: isDragging ? 0.5 : 1,
-    zIndex: isDragging ? 1000 : 'auto',
+    zIndex: isDragging ? 10000 : zIndex,
   }
 
   return (
@@ -132,6 +128,8 @@ export function StickyNote({ id, text, position, color, width = 192, height }: S
       <div
         style={style}
         data-node-id={id}
+        data-item-id={id}
+        onMouseDown={() => bringToFront(id)}
       >
         <Resizable
           size={{ width, height: noteHeight }}
@@ -248,10 +246,7 @@ export function StickyNote({ id, text, position, color, width = 192, height }: S
             </button>
             <div className="w-px bg-gray-200" />
             <button
-              onClick={() => {
-                removeConnectionsByItemId(id)
-                deleteNote(id)
-              }}
+              onClick={() => setShowDeleteConfirm(true)}
               className="p-2.5 hover:bg-red-500/10 transition-all duration-200 hover:scale-110"
               title="Delete note"
             >
@@ -262,28 +257,12 @@ export function StickyNote({ id, text, position, color, width = 192, height }: S
 
         {/* Color Picker */}
         {showColorPicker && (
-          <div
-            className="absolute -top-20 right-0 bg-white/95 backdrop-blur-md rounded-2xl shadow-xl border border-black/10 p-3 z-50"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="text-xs font-medium text-gray-600 mb-2 text-center">Select Color</div>
-            <div className="grid grid-cols-3 gap-2">
-              {colorOptions.map((colorOption) => (
-                <button
-                  key={colorOption.value}
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    updateNote(id, { color: colorOption.value })
-                    setShowColorPicker(false)
-                  }}
-                  className={`w-10 h-10 rounded-lg border-2 transition-all duration-200 hover:scale-110 ${
-                    color === colorOption.value ? 'border-blue-500 scale-110 ring-2 ring-blue-200' : 'border-gray-300'
-                  } ${colorOption.value}`}
-                  title={colorOption.name}
-                />
-              ))}
-            </div>
-          </div>
+          <ColorPicker
+            currentColor={color}
+            onSelect={(c) => updateNote(id, { color: c })}
+            onClose={() => setShowColorPicker(false)}
+            position="-top-28 right-0"
+          />
         )}
         </div>
       </Resizable>
@@ -298,6 +277,19 @@ export function StickyNote({ id, text, position, color, width = 192, height }: S
           onSave={handleSaveEdit}
         />
       )}
+
+      {/* Delete Confirmation */}
+      <DeleteConfirmModal
+        isOpen={showDeleteConfirm}
+        onConfirm={() => {
+          removeConnectionsByItemId(id)
+          deleteNote(id)
+          setShowDeleteConfirm(false)
+        }}
+        onCancel={() => setShowDeleteConfirm(false)}
+        itemName={text.slice(0, 40)}
+        itemType="note"
+      />
     </>
   )
 }

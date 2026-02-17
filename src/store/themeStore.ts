@@ -62,8 +62,10 @@ export const useThemeStore = create<ThemeStore>()(
           // Switch grid color when toggling dark mode
           if (newIsDark) {
             gridStore.setGridColor(THEME_COLORS.gridColors.dark.gray.value)
+            document.documentElement.classList.add('dark')
           } else {
             gridStore.setGridColor(THEME_COLORS.gridColors.light.gray.value)
+            document.documentElement.classList.remove('dark')
           }
           return { isDark: newIsDark }
         })

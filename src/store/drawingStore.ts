@@ -4,6 +4,7 @@ import { Drawing, DrawingPath } from '@/types/drawing'
 
 interface DrawingStore {
   drawings: Drawing[]
+  undoneDrawings: Drawing[]
   isDrawing: boolean
   isErasing: boolean
   currentColor: string
@@ -19,12 +20,14 @@ interface DrawingStore {
   deleteDrawing: (id: string) => void
   moveDrawing: (id: string, position: { x: number; y: number }) => void
   undoLastDrawing: () => void
+  redoLastDrawing: () => void
 }
 
 export const useDrawingStore = create<DrawingStore>()(
   persist(
     (set) => ({
       drawings: [],
+      undoneDrawings: [],
       isDrawing: false,
       isErasing: false,
       currentColor: '#000000',
@@ -33,7 +36,7 @@ export const useDrawingStore = create<DrawingStore>()(
       
       toggleDrawing: () => set((state) => ({ isDrawing: !state.isDrawing, isErasing: false })),
       
-      toggleEraser: () => set((state) => ({ isErasing: !state.isErasing, isDrawing: !state.isErasing })),
+      toggleEraser: () => set((state) => ({ isErasing: !state.isErasing, isDrawing: true })),
       
       setColor: (color) => set({ currentColor: color }),
       
@@ -42,7 +45,7 @@ export const useDrawingStore = create<DrawingStore>()(
       setEraserWidth: (width) => set({ eraserWidth: width }),
       
       addDrawing: (drawing) =>
-        set((state) => ({ drawings: [...state.drawings, drawing] })),
+        set((state) => ({ drawings: [...state.drawings, drawing], undoneDrawings: [] })),
       
       updateDrawing: (id, paths) =>
         set((state) => ({
@@ -64,9 +67,24 @@ export const useDrawingStore = create<DrawingStore>()(
         })),
       
       undoLastDrawing: () =>
-        set((state) => ({
-          drawings: state.drawings.slice(0, -1)
-        })),
+        set((state) => {
+          if (state.drawings.length === 0) return state
+          const last = state.drawings[state.drawings.length - 1]
+          return {
+            drawings: state.drawings.slice(0, -1),
+            undoneDrawings: [...state.undoneDrawings, last],
+          }
+        }),
+
+      redoLastDrawing: () =>
+        set((state) => {
+          if (state.undoneDrawings.length === 0) return state
+          const last = state.undoneDrawings[state.undoneDrawings.length - 1]
+          return {
+            drawings: [...state.drawings, last],
+            undoneDrawings: state.undoneDrawings.slice(0, -1),
+          }
+        }),
     }),
     {
       name: 'drawing-storage',
