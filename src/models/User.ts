@@ -3,11 +3,13 @@ import mongoose, { Schema, Model } from 'mongoose'
 export interface IUser {
   _id: string
   email: string
-  passwordHash: string
+  passwordHash: string | null
   emailVerifiedAt: Date | null
   firstName: string
   lastName: string
   image: string
+  provider: 'credentials' | 'google'
+  providerId: string | null
   mfaEnabled: boolean
   loginAttempts: number
   lockUntil: Date | null
@@ -28,7 +30,7 @@ const UserSchema = new Schema<IUser>(
     },
     passwordHash: {
       type: String,
-      required: true,
+      default: null,
     },
     emailVerifiedAt: {
       type: Date,
@@ -47,6 +49,15 @@ const UserSchema = new Schema<IUser>(
     image: {
       type: String,
       default: '',
+    },
+    provider: {
+      type: String,
+      enum: ['credentials', 'google'],
+      default: 'credentials',
+    },
+    providerId: {
+      type: String,
+      default: null,
     },
     mfaEnabled: {
       type: Boolean,

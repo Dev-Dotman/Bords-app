@@ -34,6 +34,14 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(successResponse, { status: 200 })
     }
 
+    // If user signed up with Google and has no password, inform them
+    if (user.provider === 'google' && !user.passwordHash) {
+      return NextResponse.json({
+        success: true,
+        message: 'This account uses Google sign-in. Please sign in with Google instead.',
+      }, { status: 200 })
+    }
+
     // Delete any existing reset tokens for this user
     await PasswordResetToken.deleteMany({ userId: user._id })
 
