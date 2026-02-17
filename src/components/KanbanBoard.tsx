@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import { useDraggable } from '@dnd-kit/core'
 import { CSS } from '@dnd-kit/utilities'
 import { Resizable } from 're-resizable'
@@ -63,6 +63,22 @@ export function KanbanBoard({ board }: KanbanBoardProps) {
   const [draggedTask, setDraggedTask] = useState<{
     task: KanbanTask
     columnId: string
+  } | null>(null)
+  const [dropTarget, setDropTarget] = useState<{
+    columnId: string
+    index: number
+  } | null>(null)
+
+  // Pointer-based task drag refs (touch + mouse + stylus compatible)
+  const pointerDragRef = useRef<{
+    task: KanbanTask
+    columnId: string
+    startX: number
+    startY: number
+    pointerId: number
+    ghostEl: HTMLDivElement | null
+    sourceEl: HTMLElement | null
+    isDragging: boolean
   } | null>(null)
   const [showAddColumn, setShowAddColumn] = useState(false)
   const [newColumnTitle, setNewColumnTitle] = useState('')
@@ -143,21 +159,11 @@ export function KanbanBoard({ board }: KanbanBoardProps) {
     setNewTaskColumnId(null)
   }
 
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault()
-    e.stopPropagation()
-  }
-
   const handleDrop = (
     targetColumnId: string,
     index: number,
-    e?: React.DragEvent,
   ) => {
     if (!draggedTask) return
-    if (e) {
-      e.preventDefault()
-      e.stopPropagation()
-    }
     moveTask(
       board.id,
       draggedTask.task.id,
@@ -168,19 +174,155 @@ export function KanbanBoard({ board }: KanbanBoardProps) {
     setDraggedTask(null)
   }
 
-  const handleTaskDragStart = (
-    e: React.DragEvent,
-    task: KanbanTask,
-    columnId: string,
-  ) => {
-    e.stopPropagation()
-    setDraggedTask({ task, columnId })
-  }
+  // ── Pointer-based task drag (works on touch/stylus/mouse) ───
+  const DRAG_THRESHOLD = 5 // px before drag activates
 
-  const handleTaskDragEnd = (e: React.DragEvent) => {
-    e.stopPropagation()
+  const handleTaskPointerDown = useCallback(
+    (e: React.PointerEvent, task: KanbanTask, columnId: string) => {
+      // Only primary button (left click / stylus tip / touch)
+      if (e.button !== 0) return
+      // Don't drag if editing
+      if (editingTaskData?.taskId === task.id) return
+      e.stopPropagation()
+      e.preventDefault()
+
+      const sourceEl = e.currentTarget as HTMLElement
+      sourceEl.setPointerCapture(e.pointerId)
+
+      pointerDragRef.current = {
+        task,
+        columnId,
+        startX: e.clientX,
+        startY: e.clientY,
+        pointerId: e.pointerId,
+        ghostEl: null,
+        sourceEl,
+        isDragging: false,
+      }
+    },
+    [editingTaskData],
+  )
+
+  const handleTaskPointerMove = useCallback(
+    (e: React.PointerEvent) => {
+      const drag = pointerDragRef.current
+      if (!drag) return
+      e.stopPropagation()
+      e.preventDefault()
+
+      const dx = e.clientX - drag.startX
+      const dy = e.clientY - drag.startY
+
+      // Check threshold before activating drag
+      if (!drag.isDragging) {
+        if (Math.abs(dx) < DRAG_THRESHOLD && Math.abs(dy) < DRAG_THRESHOLD) return
+        drag.isDragging = true
+        setDraggedTask({ task: drag.task, columnId: drag.columnId })
+
+        // Create ghost element
+        const ghost = document.createElement('div')
+        ghost.className =
+          'fixed pointer-events-none z-[99999] p-3 rounded-xl border bg-white border-blue-300 shadow-2xl opacity-90 text-sm font-medium text-gray-800 max-w-[220px] truncate'
+        ghost.textContent = drag.task.title
+        ghost.style.left = `${e.clientX - 40}px`
+        ghost.style.top = `${e.clientY - 15}px`
+        document.body.appendChild(ghost)
+        drag.ghostEl = ghost
+
+        // Dim source
+        if (drag.sourceEl) drag.sourceEl.style.opacity = '0.3'
+      }
+
+      // Move ghost
+      if (drag.ghostEl) {
+        drag.ghostEl.style.left = `${e.clientX - 40}px`
+        drag.ghostEl.style.top = `${e.clientY - 15}px`
+      }
+
+      // Hit-test to find drop target column & position
+      if (drag.ghostEl) drag.ghostEl.style.display = 'none'
+      const elBelow = document.elementFromPoint(e.clientX, e.clientY)
+      if (drag.ghostEl) drag.ghostEl.style.display = ''
+
+      if (elBelow) {
+        // Find the column drop zone
+        const colEl = elBelow.closest('[data-kanban-column]') as HTMLElement
+        if (colEl) {
+          const colId = colEl.dataset.kanbanColumn!
+          // Find task index at this y position
+          const taskEls = Array.from(
+            colEl.querySelectorAll('[data-kanban-task]'),
+          ) as HTMLElement[]
+          let idx = taskEls.length
+          for (let i = 0; i < taskEls.length; i++) {
+            const rect = taskEls[i].getBoundingClientRect()
+            if (e.clientY < rect.top + rect.height / 2) {
+              idx = i
+              break
+            }
+          }
+          setDropTarget({ columnId: colId, index: idx })
+        } else {
+          setDropTarget(null)
+        }
+      }
+    },
+    [],
+  )
+
+  const handleTaskPointerUp = useCallback(
+    (e: React.PointerEvent) => {
+      const drag = pointerDragRef.current
+      if (!drag) return
+      e.stopPropagation()
+      e.preventDefault()
+
+      // Clean up ghost
+      if (drag.ghostEl) {
+        drag.ghostEl.remove()
+        drag.ghostEl = null
+      }
+
+      // Restore source opacity
+      if (drag.sourceEl) drag.sourceEl.style.opacity = ''
+
+      // Release pointer capture
+      try {
+        ;(e.currentTarget as HTMLElement).releasePointerCapture(drag.pointerId)
+      } catch {}
+
+      if (drag.isDragging && dropTarget) {
+        moveTask(
+          board.id,
+          drag.task.id,
+          drag.columnId,
+          dropTarget.columnId,
+          dropTarget.index,
+        )
+      }
+
+      pointerDragRef.current = null
+      setDraggedTask(null)
+      setDropTarget(null)
+    },
+    [board.id, dropTarget, moveTask],
+  )
+
+  const handleTaskPointerCancel = useCallback((e: React.PointerEvent) => {
+    const drag = pointerDragRef.current
+    if (!drag) return
+    if (drag.ghostEl) {
+      drag.ghostEl.remove()
+      drag.ghostEl = null
+    }
+    if (drag.sourceEl) drag.sourceEl.style.opacity = ''
+    try {
+      ;(e.currentTarget as HTMLElement).releasePointerCapture(drag.pointerId)
+    } catch {}
+    pointerDragRef.current = null
     setDraggedTask(null)
-  }
+    setDropTarget(null)
+  }, [])
 
   // double-click on the board background toggles connection selection
   const handleDoubleClick = () => {
@@ -417,13 +559,13 @@ export function KanbanBoard({ board }: KanbanBoardProps) {
               {board.columns.map((column) => (
                 <div
                   key={column.id}
-                  className="rounded-2xl flex flex-col shrink-0 bg-zinc-50/80"
+                  data-kanban-column={column.id}
+                  className={`rounded-2xl flex flex-col shrink-0 transition-colors ${
+                    dropTarget?.columnId === column.id
+                      ? 'bg-blue-50/80 ring-2 ring-blue-300/50'
+                      : 'bg-zinc-50/80'
+                  }`}
                   style={{ width: '240px' }}
-                  onDragOver={handleDragOver}
-                  onDrop={(e) => {
-                    e.preventDefault()
-                    handleDrop(column.id, column.tasks.length, e)
-                  }}
                 >
                   {/* Column header */}
                   <div className="flex items-center justify-between p-3 pb-2 shrink-0">
@@ -514,20 +656,23 @@ export function KanbanBoard({ board }: KanbanBoardProps) {
                     {column.tasks.map((task, index) => (
                       <div
                         key={task.id}
-                        draggable={!(editingTaskData?.taskId === task.id)}
-                        onPointerDown={(e) => e.stopPropagation()}
-                        onDragStart={(e) =>
-                          handleTaskDragStart(e, task, column.id)
-                        }
-                        onDragEnd={handleTaskDragEnd}
-                        onDragOver={handleDragOver}
-                        onDrop={(e) => {
+                        data-kanban-task={task.id}
+                        onPointerDown={(e) => {
                           e.stopPropagation()
-                          handleDrop(column.id, index, e)
+                          handleTaskPointerDown(e, task, column.id)
                         }}
-                        className={`p-3 rounded-xl border cursor-grab active:cursor-grabbing group transition-all bg-white border-zinc-200/60 hover:border-zinc-300 hover:shadow-md ${
+                        onPointerMove={handleTaskPointerMove}
+                        onPointerUp={handleTaskPointerUp}
+                        onPointerCancel={handleTaskPointerCancel}
+                        style={{ touchAction: 'none' }}
+                        className={`p-3 rounded-xl border cursor-grab active:cursor-grabbing group transition-all bg-white border-zinc-200/60 hover:border-zinc-300 hover:shadow-md select-none ${
                           draggedTask?.task.id === task.id
-                            ? 'opacity-50 scale-95'
+                            ? 'opacity-30 scale-95'
+                            : ''
+                        } ${
+                          dropTarget?.columnId === column.id &&
+                          dropTarget?.index === index
+                            ? 'border-t-2 border-t-blue-400'
                             : ''
                         }`}
                       >
