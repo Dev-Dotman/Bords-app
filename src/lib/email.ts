@@ -2,19 +2,14 @@ import nodemailer from 'nodemailer'
 
 // Create reusable transporter using ZeptoMail SMTP
 const transporter = nodemailer.createTransport({
-    host: 'smtp.zeptomail.com',
-    port: 587,
-    secure: false, // use STARTTLS
-    requireTLS: true, // force TLS
-    auth: {
-      user: process.env.ZEPTOMAIL_SMTP_USER,
-      pass: process.env.ZEPTOMAIL_SMTP_PASS,
-    },
-    tls: {
-      ciphers: 'SSLv3',
-      rejectUnauthorized: false, // accept self-signed certificates
-    },
-  });
+  host: 'smtp.zeptomail.com',
+  port: 587,
+  secure: false,
+  auth: {
+    user: process.env.ZEPTOMAIL_SMTP_USER,
+    pass: process.env.ZEPTOMAIL_SMTP_PASS,
+  },
+})
 
 export interface SendEmailOptions {
   to: string
@@ -29,7 +24,7 @@ export interface SendEmailOptions {
 export async function sendEmail({ to, subject, html, text }: SendEmailOptions) {
   try {
     const info = await transporter.sendMail({
-      from: process.env.ZEPTOMAIL_FROM_EMAIL || 'Bords <noreply@bords.app>',
+      from: process.env.ZEPTOMAIL_FROM_EMAIL || 'noreply@bords.app',
       to,
       subject,
       html,

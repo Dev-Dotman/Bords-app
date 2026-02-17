@@ -212,7 +212,8 @@ export function ExportModal() {
           if (node.tagName === 'IFRAME') return false
           // Skip fixed UI overlays that shouldn't be in export
           const el = node as HTMLElement
-          if (el.dataset?.boardItem === '' && el.style?.position === 'fixed') return false
+          if (el.style?.position === 'fixed') return false
+          if (el.classList?.contains('fixed')) return false
           return true
         },
       })
@@ -363,7 +364,8 @@ export function ExportModal() {
         filter: (node) => {
           if (node.tagName === 'IFRAME') return false
           const el = node as HTMLElement
-          if (el.dataset?.boardItem === '' && el.style?.position === 'fixed') return false
+          if (el.style?.position === 'fixed') return false
+          if (el.classList?.contains('fixed')) return false
           return true
         },
       })
