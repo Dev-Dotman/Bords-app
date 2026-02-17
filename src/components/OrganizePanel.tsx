@@ -24,7 +24,7 @@ export function OrganizePanel() {
   const texts = useTextStore((state) => state.texts)
   const { deleteText } = useTextStore()
   const kanbanBoards = useKanbanStore((state) => state.boards)
-  const { deleteBoard: deleteKanban } = useKanbanStore()
+  const { removeBoard: deleteKanban } = useKanbanStore()
   const medias = useMediaStore((state) => state.medias)
   const { deleteMedia } = useMediaStore()
   const drawings = useDrawingStore((state) => state.drawings)

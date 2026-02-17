@@ -3,11 +3,12 @@ import { useDraggable } from '@dnd-kit/core'
 import { CSS } from '@dnd-kit/utilities'
 import { useTextStore, TextElement } from '../store/textStore'
 import { useDragModeStore } from '../store/dragModeStore'
-import { Trash2, RotateCcw, RotateCw, ZoomIn, ZoomOut, Palette } from 'lucide-react'
+import { Trash2, RotateCcw, RotateCw, ZoomIn, ZoomOut } from 'lucide-react'
 import { useGridStore } from '../store/gridStore'
 import { useThemeStore } from '../store/themeStore'
 import { useConnectionStore } from '../store/connectionStore'
 import { useZIndexStore } from '../store/zIndexStore'
+import { ColorPicker } from './ColorPicker'
 
 export function Text({ id, text, position, fontSize, color, rotation = 0 }: TextElement & { rotation?: number }) {
   const [isEditing, setIsEditing] = useState(false)
@@ -22,11 +23,6 @@ export function Text({ id, text, position, fontSize, color, rotation = 0 }: Text
   const zoom = useGridStore((state) => state.zoom)
   const isDark = useThemeStore((state) => state.isDark)
   const { removeConnectionsByItemId } = useConnectionStore()
-
-  const colorOptions = [
-    '#000000', '#EF4444', '#F59E0B', '#10B981', '#3B82F6', 
-    '#8B5CF6', '#EC4899', '#6B7280', '#FFFFFF'
-  ]
 
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: `text-${id}`,
@@ -53,15 +49,16 @@ export function Text({ id, text, position, fontSize, color, rotation = 0 }: Text
   }
 
   useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
+    const handleClickOutside = (e: PointerEvent) => {
       const target = e.target as HTMLElement;
       if (!target.closest(`[data-text-id="${id}"]`)) {
         setIsSelected(false);
+        setShowColorPicker(false);
       }
     };
 
-    document.addEventListener('click', handleClickOutside);
-    return () => document.removeEventListener('click', handleClickOutside);
+    document.addEventListener('pointerdown', handleClickOutside);
+    return () => document.removeEventListener('pointerdown', handleClickOutside);
   }, [id]);
 
   const style = {
@@ -70,6 +67,7 @@ export function Text({ id, text, position, fontSize, color, rotation = 0 }: Text
     left: position.x,
     top: position.y,
     rotate: `${rotation || 0}deg`,
+    touchAction: 'none' as const,
     userSelect: 'none' as const,
     WebkitUserSelect: 'none' as const,
     scrollMargin: 0,
@@ -80,7 +78,6 @@ export function Text({ id, text, position, fontSize, color, rotation = 0 }: Text
   return (
     <div
       ref={setNodeRef}
-      {...listeners}
       {...attributes}
       style={style}
       className={`select-none will-change-transform ${
@@ -88,10 +85,14 @@ export function Text({ id, text, position, fontSize, color, rotation = 0 }: Text
           ? 'ring-2 ring-blue-400/50 rounded-lg shadow-lg' 
           : isHovered ? 'ring-1 ring-blue-300/30 rounded-lg' : ''
       }`}
+      onPointerDown={(e) => {
+        bringToFront(id);
+        // Forward to dnd-kit's listener so dragging still works
+        (listeners as any)?.onPointerDown?.(e);
+      }}
       onClick={(e) => {
         e.stopPropagation();
         setIsSelected(true);
-        bringToFront(id);
       }}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
@@ -194,7 +195,7 @@ export function Text({ id, text, position, fontSize, color, rotation = 0 }: Text
 
               <div className="w-px h-6 bg-gray-300" />
 
-              {/* Color Picker Button - Shows current color */}
+              {/* Color Picker Button */}
               <div className="relative">
                 <button
                   onClick={(e) => {
@@ -208,35 +209,20 @@ export function Text({ id, text, position, fontSize, color, rotation = 0 }: Text
                     className="w-6 h-6 rounded-full border-2 border-gray-300 group-hover:border-gray-400 transition-colors shadow-sm"
                     style={{ backgroundColor: color }}
                   />
-                  <div className="absolute -bottom-1 -right-1 bg-white rounded-full p-0.5 shadow-sm">
-                    <Palette size={10} className="text-gray-600" />
-                  </div>
                 </button>
                 
                 {showColorPicker && (
-                  <div
-                    className="absolute top-12 left-1/2 -translate-x-1/2 bg-white/95 backdrop-blur-md rounded-2xl shadow-xl border border-black/10 p-3 z-50"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <div className="text-xs font-medium text-gray-600 mb-2 text-center">Select Color</div>
-                    <div className="flex gap-2">
-                      {colorOptions.map((colorOption) => (
-                        <button
-                          key={colorOption}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            updateText(id, { color: colorOption });
-                            setShowColorPicker(false);
-                          }}
-                          className={`w-8 h-8 rounded-full border-2 transition-all duration-200 hover:scale-110 ${
-                            color === colorOption ? 'border-blue-500 scale-110 ring-2 ring-blue-200' : 'border-gray-300'
-                          }`}
-                          style={{ backgroundColor: colorOption }}
-                          title={colorOption}
-                        />
-                      ))}
-                    </div>
-                  </div>
+                  <ColorPicker
+                    useHex
+                    currentColor={color}
+                    onSelect={(newColor) => {
+                      updateText(id, { color: newColor });
+                      setShowColorPicker(false);
+                    }}
+                    onClose={() => setShowColorPicker(false)}
+                    label="Text Color"
+                    position="absolute top-12 left-1/2 -translate-x-1/2 z-[9999]"
+                  />
                 )}
               </div>
 

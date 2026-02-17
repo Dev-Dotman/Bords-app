@@ -27,6 +27,39 @@ export const boardColorOptions = [
   { name: 'White', value: 'bg-white/90' },
 ]
 
+/** Hex color options for components that use inline style backgroundColor */
+export const hexColorOptions = [
+  // Row 1 — warm
+  { name: 'Yellow', value: '#FEF3C7' },
+  { name: 'Amber', value: '#FDE68A' },
+  { name: 'Orange', value: '#FFEDD5' },
+  { name: 'Red', value: '#FEE2E2' },
+  { name: 'Rose', value: '#FFE4E6' },
+  // Row 2 — cool
+  { name: 'Pink', value: '#FCE7F3' },
+  { name: 'Fuchsia', value: '#FAE8FF' },
+  { name: 'Purple', value: '#E9D5FF' },
+  { name: 'Violet', value: '#DDD6FE' },
+  { name: 'Indigo', value: '#C7D2FE' },
+  // Row 3 — nature
+  { name: 'Blue', value: '#DBEAFE' },
+  { name: 'Sky', value: '#BAE6FD' },
+  { name: 'Cyan', value: '#CFFAFE' },
+  { name: 'Teal', value: '#CCFBF1' },
+  { name: 'Emerald', value: '#D1FAE5' },
+  // Row 4 — earth + neutral
+  { name: 'Green', value: '#DCFCE7' },
+  { name: 'Lime', value: '#ECFCCB' },
+  { name: 'Stone', value: '#E7E5E4' },
+  { name: 'Gray', value: '#F3F4F6' },
+  { name: 'White', value: '#FFFFFF' },
+]
+
+interface ColorOption {
+  name: string
+  value: string
+}
+
 interface ColorPickerProps {
   currentColor: string
   onSelect: (color: string) => void
@@ -35,6 +68,10 @@ interface ColorPickerProps {
   label?: string
   /** Position classes, e.g. "top-full right-0 mt-2" */
   position?: string
+  /** Use hex color options (inline style) instead of Tailwind class options */
+  useHex?: boolean
+  /** Override with fully custom color options */
+  colors?: ColorOption[]
 }
 
 export function ColorPicker({
@@ -43,8 +80,11 @@ export function ColorPicker({
   onClose,
   label = 'Select Color',
   position = 'top-full right-0 mt-2',
+  useHex = false,
+  colors,
 }: ColorPickerProps) {
   const ref = useRef<HTMLDivElement>(null)
+  const options = colors ?? (useHex ? hexColorOptions : boardColorOptions)
 
   // Click-outside to close
   useEffect(() => {
@@ -72,7 +112,7 @@ export function ColorPicker({
         {label}
       </div>
       <div className="grid grid-cols-5 gap-1.5">
-        {boardColorOptions.map((opt) => (
+        {options.map((opt) => (
           <button
             key={opt.value}
             onClick={(e) => {
@@ -84,7 +124,8 @@ export function ColorPicker({
               currentColor === opt.value
                 ? 'border-blue-500 scale-110 ring-2 ring-blue-200'
                 : 'border-gray-200 hover:border-gray-300'
-            } ${opt.value}`}
+            } ${useHex || colors ? '' : opt.value}`}
+            style={useHex || colors ? { backgroundColor: opt.value } : undefined}
             title={opt.name}
           />
         ))}

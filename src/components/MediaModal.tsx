@@ -3,6 +3,7 @@ import { X, Link, Upload, Image as ImageIcon, Video } from 'lucide-react'
 import { useMediaStore, MediaType } from '../store/mediaStore'
 import { useThemeStore } from '../store/themeStore'
 import { useBoardStore } from '../store/boardStore'
+import { useZIndexStore } from '../store/zIndexStore'
 
 type SelectionMode = 'type-selection' | 'url-form' | 'upload-form'
 
@@ -66,7 +67,7 @@ export function MediaModal() {
 
     addMedia(newMedia)
     
-    // Add to current board
+    // Add to current board and bring to front
     if (currentBoardId) {
       // Get the newly created media ID (it will be the last one)
       setTimeout(() => {
@@ -74,6 +75,7 @@ export function MediaModal() {
         const latestMedia = medias[medias.length - 1]
         if (latestMedia) {
           addMediaToBoard(currentBoardId, latestMedia.id)
+          useZIndexStore.getState().bringToFront(latestMedia.id)
         }
       }, 0)
     }
@@ -141,13 +143,14 @@ export function MediaModal() {
 
         addMedia(newMedia)
         
-        // Add to current board
+        // Add to current board and bring to front
         if (currentBoardId) {
           setTimeout(() => {
             const medias = useMediaStore.getState().medias
             const latestMedia = medias[medias.length - 1]
             if (latestMedia) {
               addMediaToBoard(currentBoardId, latestMedia.id)
+              useZIndexStore.getState().bringToFront(latestMedia.id)
             }
           }, 0)
         }

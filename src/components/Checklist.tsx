@@ -314,6 +314,7 @@ export function Checklist({ id, title, items, position, color, width = 320, heig
     top: position.y,
     fontSize: `${scaledFontSize}px`,
     padding: `${scaledSpacing * 1.25}px`,
+    touchAction: 'none' as const,
     boxShadow: '0 10px 40px rgba(0, 0, 0, 0.15)',
     scrollMargin: 0,
     opacity: isDragging ? 0.5 : 1,

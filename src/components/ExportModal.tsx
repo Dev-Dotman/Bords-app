@@ -11,6 +11,43 @@ import { useMediaStore } from '../store/mediaStore'
 import { useDrawingStore } from '../store/drawingStore'
 import { toPng } from 'html-to-image'
 
+/** Convert all cross-origin <img> elements inside a container to inline data-URL src
+ *  so html-to-image won't be blocked by canvas tainting.  Returns a cleanup function
+ *  that restores the original src values. */
+async function inlineExternalImages(container: HTMLElement): Promise<() => void> {
+  const imgs = Array.from(container.querySelectorAll('img')) as HTMLImageElement[]
+  const originals: { img: HTMLImageElement; src: string }[] = []
+
+  await Promise.all(
+    imgs.map(async (img) => {
+      // Skip already-inlined (data: or blob:) and same-origin images
+      if (!img.src || img.src.startsWith('data:') || img.src.startsWith('blob:')) return
+      try {
+        const url = new URL(img.src)
+        if (url.origin === window.location.origin) return
+      } catch { return }
+
+      try {
+        const res = await fetch(img.src, { mode: 'cors', cache: 'force-cache' })
+        const blob = await res.blob()
+        const dataUrl = await new Promise<string>((resolve) => {
+          const reader = new FileReader()
+          reader.onloadend = () => resolve(reader.result as string)
+          reader.readAsDataURL(blob)
+        })
+        originals.push({ img, src: img.src })
+        img.src = dataUrl
+      } catch {
+        // If CORS fetch fails, leave image as-is — imagePlaceholder will handle it
+      }
+    }),
+  )
+
+  return () => {
+    originals.forEach(({ img, src }) => { img.src = src })
+  }
+}
+
 export function ExportModal() {
   const { isExportModalOpen, closeExportModal } = useExportStore()
   const { currentBoardId, boards } = useBoardStore()
@@ -133,15 +170,9 @@ export function ExportModal() {
         maxY = 600
       }
 
-      // Add board title at top
-      minY = Math.min(minY, 32)
-      minX = Math.min(minX, 32)
-
-      // Ensure bottom padding ends 10px below the bottommost item
       const padding = 100
-      const bottomPadding = 100
       const width = maxX - minX + padding * 2
-      const height = maxY - minY + padding * 5 + bottomPadding
+      const height = maxY - minY + padding * 2
 
       console.log('Preview bounds:', { width, height, minX, minY, maxX, maxY, totalItems })
 
@@ -160,8 +191,11 @@ export function ExportModal() {
         scrollContainer.scrollLeft = 0
       }
 
-      // Wait for connection lines to re-render
-      await new Promise(resolve => setTimeout(resolve, 100))
+      // Wait for layout to settle
+      await new Promise(resolve => setTimeout(resolve, 200))
+
+      // Pre-convert cross-origin images to data URLs
+      const restoreImages = await inlineExternalImages(canvasElement)
 
       const preview = await toPng(canvasElement, {
         backgroundColor: isDark ? '#18181b' : '#ffffff',
@@ -173,12 +207,17 @@ export function ExportModal() {
         pixelRatio: 1,
         cacheBust: true,
         skipAutoScale: true,
+        imagePlaceholder: 'data:image/svg+xml;charset=utf-8,<svg xmlns="http://www.w3.org/2000/svg" width="200" height="150"><rect fill="%23f0f0f0" width="200" height="150"/><text x="100" y="75" text-anchor="middle" fill="%23999" font-size="14">Image</text></svg>',
         filter: (node) => {
-          // Skip iframes (YouTube embeds) - thumbnail will be visible instead
           if (node.tagName === 'IFRAME') return false
+          // Skip fixed UI overlays that shouldn't be in export
+          const el = node as HTMLElement
+          if (el.dataset?.boardItem === '' && el.style?.position === 'fixed') return false
           return true
         },
       })
+
+      restoreImages()
 
       // Restore scroll position
       if (scrollContainer) {
@@ -281,15 +320,9 @@ export function ExportModal() {
         return
       }
 
-      // Add board title at top
-      minY = Math.min(minY, 32)
-      minX = Math.min(minX, 32)
-
-      // Ensure bottom padding ends 10px below the bottommost item
       const padding = 100
-      const bottomPadding = 100
       const exportWidth = maxX - minX + padding * 2
-      const exportHeight = maxY - minY + padding * 5 +  bottomPadding
+      const exportHeight = maxY - minY + padding * 2
 
       console.log('Export dimensions:', { exportWidth, exportHeight, minX, minY, maxX, maxY, totalItems })
 
@@ -309,8 +342,11 @@ export function ExportModal() {
         scrollContainer.scrollLeft = 0
       }
 
-      // Wait for connection lines to re-render
-      await new Promise(resolve => setTimeout(resolve, 100))
+      // Wait for layout to settle
+      await new Promise(resolve => setTimeout(resolve, 200))
+
+      // Pre-convert cross-origin images to data URLs
+      const restoreImages = await inlineExternalImages(canvasElement)
 
       // Export the canvas with calculated dimensions
       const dataUrl = await toPng(canvasElement, {
@@ -323,12 +359,16 @@ export function ExportModal() {
         pixelRatio: 2,
         cacheBust: true,
         skipAutoScale: true,
+        imagePlaceholder: 'data:image/svg+xml;charset=utf-8,<svg xmlns="http://www.w3.org/2000/svg" width="200" height="150"><rect fill="%23f0f0f0" width="200" height="150"/><text x="100" y="75" text-anchor="middle" fill="%23999" font-size="14">Image</text></svg>',
         filter: (node) => {
-          // Skip iframes (YouTube embeds) - thumbnail will be visible instead
           if (node.tagName === 'IFRAME') return false
+          const el = node as HTMLElement
+          if (el.dataset?.boardItem === '' && el.style?.position === 'fixed') return false
           return true
         },
       })
+
+      restoreImages()
 
       // Restore scroll position
       if (scrollContainer) {

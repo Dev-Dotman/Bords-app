@@ -16,18 +16,7 @@ import { useConnectionStore } from "../store/connectionStore";
 import { ConnectionNode } from "./ConnectionNode";
 import { useZIndexStore } from '../store/zIndexStore'
 import { DeleteConfirmModal } from './DeleteConfirmModal'
-
-const mediaColorOptions = [
-  { name: "White", value: "#FFFFFF" },
-  { name: "Yellow", value: "#FEF3C7" },
-  { name: "Pink", value: "#FCE7F3" },
-  { name: "Blue", value: "#DBEAFE" },
-  { name: "Green", value: "#D1FAE5" },
-  { name: "Purple", value: "#E9D5FF" },
-  { name: "Orange", value: "#FFEDD5" },
-  { name: "Red", value: "#FEE2E2" },
-  { name: "Gray", value: "#F3F4F6" },
-];
+import { ColorPicker } from './ColorPicker'
 
 export function Media({
   id,
@@ -275,7 +264,7 @@ export function Media({
                   <img
                     src={thumbnailUrl}
                     alt={title || "Video thumbnail"}
-                    className="absolute inset-0 w-full h-full object-cover -z-10"
+                    className="absolute inset-0 w-full h-full object-cover z-0"
                     crossOrigin="anonymous"
                     data-export-thumbnail="true"
                   />
@@ -354,33 +343,14 @@ export function Media({
 
           {/* Color Picker */}
           {showColorPicker && (
-            <div
-              className="absolute top-14 right-2 bg-white/95 backdrop-blur-md rounded-2xl shadow-xl border border-black/10 p-3 z-50"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="text-xs font-medium text-gray-600 mb-2 text-center">
-                Select Background Color
-              </div>
-              <div className="grid grid-cols-3 gap-2">
-                {mediaColorOptions.map((colorOption) => (
-                  <button
-                    key={colorOption.value}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      updateMedia(id, { color: colorOption.value });
-                      setShowColorPicker(false);
-                    }}
-                    className={`w-10 h-10 rounded-lg border-2 transition-all duration-200 hover:scale-110 ${
-                      color === colorOption.value
-                        ? "border-blue-500 scale-110 ring-2 ring-blue-200"
-                        : "border-gray-300"
-                    }`}
-                    style={{ backgroundColor: colorOption.value }}
-                    title={colorOption.name}
-                  />
-                ))}
-              </div>
-            </div>
+            <ColorPicker
+              currentColor={color || '#FFFFFF'}
+              onSelect={(c) => updateMedia(id, { color: c })}
+              onClose={() => setShowColorPicker(false)}
+              label="Background Color"
+              position="top-14 right-2"
+              useHex
+            />
           )}
         </div>
         </Resizable>
