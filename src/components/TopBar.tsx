@@ -582,11 +582,11 @@ export function TopBar() {
                 Cancel
               </button>
               <button
-                onClick={() => {
-                  // Delete from cloud first (fire-and-forget), then local
-                  useBoardSyncStore.getState().deleteBoardFromCloud(currentBoardId)
-                  deleteBoard(currentBoardId)
+                onClick={async () => {
                   setShowDeleteConfirm(false)
+                  // Delete from cloud (awaited), then delete locally
+                  await useBoardSyncStore.getState().deleteBoardFromCloud(currentBoardId)
+                  deleteBoard(currentBoardId)
                 }}
                 className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium transition-colors"
               >

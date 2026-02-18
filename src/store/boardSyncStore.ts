@@ -43,6 +43,7 @@ interface BoardSyncStore {
   contentHashes: Record<string, string>   // localBoardId → last-known cloud hash
   dirtyBoards: Set<string>                // boards with unsaved local changes
   staleBoards: Set<string>                // boards with newer cloud versions
+  deletedBoardIds: Set<string>            // boards deleted locally — skip on re-import
   cloudBoards: CloudBoardMeta[]
   error: string | null
 
@@ -381,6 +382,7 @@ export const useBoardSyncStore = create<BoardSyncStore>()((set, get) => ({
   contentHashes: {},
   dirtyBoards: new Set<string>(),
   staleBoards: new Set<string>(),
+  deletedBoardIds: new Set<string>(),
   cloudBoards: [],
   error: null,
 
@@ -457,6 +459,9 @@ export const useBoardSyncStore = create<BoardSyncStore>()((set, get) => ({
 
   /* ── Delete from cloud ── */
   deleteBoardFromCloud: async (localBoardId: string) => {
+    // Immediately mark as deleted so sync loops won't re-import it
+    set(s => ({ deletedBoardIds: new Set(s.deletedBoardIds).add(localBoardId) }))
+
     try {
       const res = await fetch(`/api/boards/sync/${localBoardId}`, { method: 'DELETE' })
       if (!res.ok) {
@@ -525,6 +530,9 @@ export const useBoardSyncStore = create<BoardSyncStore>()((set, get) => ({
       for (const entry of cloudHashes) {
         const localBoardId = entry.localBoardId
         if (!localBoardId) continue
+
+        // Skip boards that were deliberately deleted
+        if (get().deletedBoardIds.has(localBoardId)) continue
 
         const boardStore = useBoardStore.getState()
         const localBoard = boardStore.boards.find((b: any) => b.id === localBoardId)
@@ -684,6 +692,9 @@ export const useBoardSyncStore = create<BoardSyncStore>()((set, get) => ({
       for (const entry of cloudEntries) {
         const { localBoardId, contentHash: cloudHash } = entry
         if (!localBoardId || !cloudHash) continue
+
+        // Skip boards that were deliberately deleted
+        if (get().deletedBoardIds.has(localBoardId)) continue
 
         // Skip boards with pending local changes (local wins)
         if (get().dirtyBoards.has(localBoardId)) continue

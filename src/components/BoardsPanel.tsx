@@ -13,6 +13,7 @@ import { useState, useRef, useEffect, useMemo } from 'react'
 import { format } from 'date-fns'
 import { useSession } from 'next-auth/react'
 import { SyncButton, ShareModal } from './BoardSyncControls'
+import { useBoardSyncStore } from '../store/boardSyncStore'
 
 interface BoardsPanelProps {
   isOpen: boolean
@@ -328,9 +329,11 @@ export function BoardsPanel({ isOpen, onClose }: BoardsPanelProps) {
                 Cancel
               </button>
               <button
-                onClick={() => {
-                  deleteBoard(boardToDelete)
+                onClick={async () => {
+                  const id = boardToDelete
                   setBoardToDelete(null)
+                  await useBoardSyncStore.getState().deleteBoardFromCloud(id)
+                  deleteBoard(id)
                 }}
                 className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium transition-colors"
               >

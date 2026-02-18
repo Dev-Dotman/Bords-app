@@ -441,7 +441,7 @@ export default function Home() {
             Desktop Only
           </h1>
           <p className="text-zinc-400 mb-8 leading-relaxed">
-            The BORDS canvas requires a larger screen. You can still view and manage your assigned tasks from your inbox.
+            The BORDS canvas requires a larger screen. You can still view and manage your inbox.
           </p>
           <div className="flex flex-col gap-3">
             <button
