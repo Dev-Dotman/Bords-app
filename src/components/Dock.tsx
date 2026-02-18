@@ -254,14 +254,14 @@ export function Dock() {
     { id: 'separator-4', isSeparator: true },
     
     // View
-    { 
-      id: 5, 
-      icon: Maximize, 
-      label: "Full Screen", 
-      description: !currentBoardId ? "Select/create a board first" : "Scale board to fit screen",
-      onClick: currentBoardId ? () => useFullScreenStore.getState().setFullScreen(true) : undefined,
-      disabled: !currentBoardId
-    },
+    // { 
+    //   id: 5, 
+    //   icon: Maximize, 
+    //   label: "Full Screen", 
+    //   description: !currentBoardId ? "Select/create a board first" : "Scale board to fit screen",
+    //   onClick: currentBoardId ? () => useFullScreenStore.getState().setFullScreen(true) : undefined,
+    //   disabled: !currentBoardId
+    // },
     { id: 11, icon: History, label: "History", description: "Coming soon!" },
   ]
 

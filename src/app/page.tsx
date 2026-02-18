@@ -632,7 +632,7 @@ export default function Home() {
       )}
 
       <div className="relative min-h-[470vh]">
-        {!isPresentationMode && !isFullScreen && (
+        {!isFullScreen && (
           <GridBackground
             hoveredCell={hoveredCell}
             onCellHover={setHoveredCell}
