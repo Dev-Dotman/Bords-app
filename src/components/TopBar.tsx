@@ -244,6 +244,23 @@ export function TopBar() {
             </div>
           </button>
         </div>
+
+        {/* Board name - inline on small screens */}
+        {!isPresentationMode && currentBoard && (
+          <div
+            className={`hidden max-[1200px]:flex items-center px-4 py-2 rounded-xl border shadow-lg backdrop-blur-xl
+              ${isDark
+                ? 'bg-zinc-800/70 border-zinc-700/50'
+                : 'bg-white/70 border-zinc-200/50'}`}
+          >
+            <h1
+              className={`text-sm font-semibold tracking-tight truncate max-w-[150px]
+                ${isDark ? 'text-white' : 'text-zinc-900'}`}
+            >
+              {currentBoard.name}
+            </h1>
+          </div>
+        )}
       </div>
 
       {/* Boards Panel */}

@@ -317,7 +317,7 @@ export default function Home() {
         <PresentationHint onDismiss={() => {}} />
       )}
 
-      <div className="relative min-h-[170vh]">
+      <div className="relative min-h-[370vh]">
         <GridBackground
           hoveredCell={hoveredCell}
           onCellHover={setHoveredCell}
@@ -326,12 +326,12 @@ export default function Home() {
 
         {/* Content and Connection Lines */}
         <div
-          className="fixed inset-0 overflow-auto pb-[50vh]"
+          className="fixed inset-0 overflow-auto pb-[350vh]"
           data-board-canvas
         >
           {/* Board Name - Positioned between TopBar and right controls */}
           <div
-            className="fixed top-5 left-1/2 -translate-x-1/2 flex items-center gap-2 pointer-events-auto z-[9999] max-[1200px]:left-auto max-[1200px]:right-[35%] max-[1200px]:translate-x-0"
+            className="fixed top-5 left-1/2 -translate-x-1/2 flex items-center gap-2 pointer-events-auto z-[9999] max-[1200px]:hidden"
             data-board-item
           >
             <div
