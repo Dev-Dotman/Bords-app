@@ -467,7 +467,13 @@ export const useBoardSyncStore = create<BoardSyncStore>()((set, get) => ({
       set(s => {
         const updated = { ...s.lastSyncedAt }
         delete updated[localBoardId]
-        return { lastSyncedAt: updated }
+        const hashes = { ...s.contentHashes }
+        delete hashes[localBoardId]
+        const dirty = new Set(s.dirtyBoards)
+        dirty.delete(localBoardId)
+        const stale = new Set(s.staleBoards)
+        stale.delete(localBoardId)
+        return { lastSyncedAt: updated, contentHashes: hashes, dirtyBoards: dirty, staleBoards: stale }
       })
       toast.success('Board removed from cloud')
     } catch (error: any) {

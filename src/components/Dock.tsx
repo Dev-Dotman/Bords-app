@@ -10,6 +10,7 @@ import { useCommentStore } from '../store/commentStore';
 import { Comments } from './Comments';
 import { useConnectionStore } from '../store/connectionStore';
 import { usePresentationStore } from '../store/presentationStore'
+import { useFullScreenStore } from '../store/fullScreenStore'
 import { useBoardSyncStore } from '../store/boardSyncStore'
 import {
   GripHorizontal,
@@ -53,6 +54,7 @@ export function Dock() {
   const { isCommenting, toggleCommenting, comments } = useCommentStore();
   const connections = useConnectionStore((state) => state.connections)
   const isPresentationMode = usePresentationStore((state) => state.isPresentationMode)
+  const isFullScreen = useFullScreenStore((state) => state.isFullScreen)
   const { isVisible, toggleVisibility } = useConnectionStore()
   const { addText } = useTextStore()
   const toggleOrganizePanel = useOrganizePanelStore((state) => state.togglePanel)
@@ -75,7 +77,7 @@ export function Dock() {
     }
   }, [currentBoardId]);
 
-  if (isPresentationMode) return null
+  if (isPresentationMode || isFullScreen) return null
 
   const handleAddNote = ({ text, color }: { text: string; color: string }) => {
     // Ensure new notes are created within viewport
@@ -252,14 +254,14 @@ export function Dock() {
     { id: 'separator-4', isSeparator: true },
     
     // View
-    // { 
-    //   id: 5, 
-    //   icon: Maximize, 
-    //   label: "Full Screen", 
-    //   description: !currentBoardId ? "Select/create a board first" : "Presentation view",
-    //   onClick: currentBoardId ? () => usePresentationStore.getState().setPresentationMode(true) : undefined,
-    //   disabled: !currentBoardId
-    // },
+    { 
+      id: 5, 
+      icon: Maximize, 
+      label: "Full Screen", 
+      description: !currentBoardId ? "Select/create a board first" : "Scale board to fit screen",
+      onClick: currentBoardId ? () => useFullScreenStore.getState().setFullScreen(true) : undefined,
+      disabled: !currentBoardId
+    },
     { id: 11, icon: History, label: "History", description: "Coming soon!" },
   ]
 
@@ -291,8 +293,9 @@ export function Dock() {
                   ${item.isActive ? 'text-blue-500' : ''}
                   ${item.disabled ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}
                 `}
-                onMouseEnter={() => setHoveredItem(item.id)}
-                onMouseLeave={() => setHoveredItem(null)}
+                onPointerEnter={(e) => { if (e.pointerType !== 'touch') setHoveredItem(item.id) }}
+                onPointerLeave={(e) => { if (e.pointerType !== 'touch') setHoveredItem(null) }}
+                onTouchEnd={() => setHoveredItem(null)}
               >
                 {item.icon && (
                   <item.icon 

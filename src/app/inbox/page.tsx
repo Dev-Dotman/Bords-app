@@ -207,26 +207,26 @@ export default function ExecutionInbox() {
       <header className={`sticky top-0 z-10 border-b backdrop-blur-xl ${
         isDark ? 'bg-zinc-900/95 border-zinc-800' : 'bg-white/95 border-zinc-200'
       }`}>
-        <div className="max-w-3xl mx-auto px-4">
+        <div className="max-w-3xl mx-auto px-3 sm:px-4">
           {/* Row 1: Logo + title + back button */}
-          <div className="flex items-center justify-between py-3">
-            <div className="flex items-center gap-3">
+          <div className="flex items-center justify-between py-3 sm:py-3">
+            <div className="flex items-center gap-2.5 sm:gap-3">
               <button
                 onClick={() => router.push('/')}
-                className={`p-1.5 rounded-lg transition-colors ${
+                className={`p-2 sm:p-1.5 rounded-lg transition-colors ${
                   isDark ? 'hover:bg-zinc-800 text-zinc-400' : 'hover:bg-zinc-100 text-zinc-500'
                 }`}
               >
-                <ArrowLeft size={18} />
+                <ArrowLeft size={20} className="sm:w-[18px] sm:h-[18px]" />
               </button>
-              <div className="w-7 h-7 bg-black rounded-lg flex items-center justify-center p-1">
+              <div className="w-8 h-8 sm:w-7 sm:h-7 bg-black rounded-lg flex items-center justify-center p-1">
                 <img src="/bordclear.png" alt="BORDS" className="w-full h-full object-contain" />
               </div>
               <div>
-                <h1 className={`text-base font-bold tracking-tight leading-none ${isDark ? 'text-white' : 'text-zinc-900'}`}>
+                <h1 className={`text-lg sm:text-base font-bold tracking-tight leading-none ${isDark ? 'text-white' : 'text-zinc-900'}`}>
                   Inbox
                 </h1>
-                <p className={`text-[11px] mt-0.5 ${isDark ? 'text-zinc-500' : 'text-zinc-400'}`}>
+                <p className={`text-xs sm:text-[11px] mt-0.5 ${isDark ? 'text-zinc-500' : 'text-zinc-400'}`}>
                   {pendingTasks.length} pending
                 </p>
               </div>
@@ -234,12 +234,12 @@ export default function ExecutionInbox() {
           </div>
 
           {/* Row 2: Filter tabs — Gmail-style category tabs */}
-          <div className="flex border-b-0 -mb-px">
+          <div className="flex border-b-0 -mb-px overflow-x-auto scrollbar-none">
             {tabs.map(({ key, label, count }) => (
               <button
                 key={key}
                 onClick={() => setFilter(key)}
-                className={`relative px-4 py-2.5 text-xs font-medium transition-colors ${
+                className={`relative px-3 sm:px-4 py-3 sm:py-2.5 text-[13px] sm:text-xs font-medium transition-colors whitespace-nowrap flex-shrink-0 ${
                   filter === key
                     ? isDark
                       ? 'text-white'
@@ -277,11 +277,11 @@ export default function ExecutionInbox() {
       </header>
 
       {/* Task List */}
-      <main className="max-w-3xl mx-auto">
+      <main className="max-w-3xl mx-auto pb-8">
         {taskGroups.length === 0 ? (
-          <div className="text-center py-24">
-            <Inbox size={40} className={`mx-auto mb-3 ${isDark ? 'text-zinc-700' : 'text-zinc-300'}`} />
-            <h2 className={`text-base font-semibold mb-1 ${isDark ? 'text-zinc-400' : 'text-zinc-600'}`}>
+          <div className="text-center py-24 px-6">
+            <Inbox size={44} className={`mx-auto mb-4 ${isDark ? 'text-zinc-700' : 'text-zinc-300'}`} />
+            <h2 className={`text-lg sm:text-base font-semibold mb-1.5 ${isDark ? 'text-zinc-400' : 'text-zinc-600'}`}>
               No tasks yet
             </h2>
             <p className={`text-sm ${isDark ? 'text-zinc-600' : 'text-zinc-400'}`}>
@@ -315,18 +315,18 @@ export default function ExecutionInbox() {
                   {/* Organization header — collapsible */}
                   <button
                     onClick={() => setExpandedOrg(isExpanded ? (expandedOrg === null ? group.organization._id : null) : group.organization._id)}
-                    className={`w-full flex items-center gap-2 px-5 py-2.5 text-left transition-colors ${
+                    className={`w-full flex items-center gap-2 px-4 sm:px-5 py-3 sm:py-2.5 text-left transition-colors ${
                       isDark ? 'bg-zinc-800/50 hover:bg-zinc-800' : 'bg-zinc-100/80 hover:bg-zinc-100'
                     }`}
                   >
-                    <Building2 size={13} className={isDark ? 'text-zinc-500' : 'text-zinc-400'} />
-                    <span className={`text-xs font-semibold flex-1 ${isDark ? 'text-zinc-400' : 'text-zinc-500'}`}>
+                    <Building2 size={14} className={isDark ? 'text-zinc-500' : 'text-zinc-400'} />
+                    <span className={`text-[13px] sm:text-xs font-semibold flex-1 ${isDark ? 'text-zinc-400' : 'text-zinc-500'}`}>
                       {group.organization.name}
                     </span>
-                    <span className={`text-[10px] font-medium ${isDark ? 'text-zinc-600' : 'text-zinc-400'}`}>
+                    <span className={`text-[11px] sm:text-[10px] font-medium ${isDark ? 'text-zinc-600' : 'text-zinc-400'}`}>
                       {filteredTasks.length}
                     </span>
-                    <ChevronDown size={12} className={`transition-transform ${isDark ? 'text-zinc-600' : 'text-zinc-400'} ${isExpanded ? '' : '-rotate-90'}`} />
+                    <ChevronDown size={14} className={`transition-transform ${isDark ? 'text-zinc-600' : 'text-zinc-400'} ${isExpanded ? '' : '-rotate-90'}`} />
                   </button>
 
                   {/* Task rows */}
@@ -413,12 +413,12 @@ function TaskRow({
             : 'bg-white border-zinc-200 hover:bg-zinc-50'
       }`}
     >
-      <div className="flex items-center gap-3 px-4 py-3 md:py-4 md:px-5 md:gap-4">
+      <div className="flex items-start sm:items-center gap-3 px-3 py-3.5 sm:px-5 sm:py-4 sm:gap-4">
         {/* Check / status toggle */}
         <button
           onClick={() => onComplete(task._id)}
           disabled={isCompleting}
-          className={`flex-shrink-0 transition-colors ${
+          className={`flex-shrink-0 mt-0.5 sm:mt-0 p-1 -m-1 transition-colors ${
             isCompleted
               ? isDark ? 'text-emerald-400 hover:text-zinc-500' : 'text-emerald-500 hover:text-zinc-400'
               : isCompleting
@@ -428,123 +428,152 @@ function TaskRow({
           title={isCompleted ? 'Mark as incomplete' : 'Mark as complete'}
         >
           {isCompleting ? (
-            <Loader2 size={18} className="animate-spin" />
+            <Loader2 size={20} className="animate-spin sm:w-[18px] sm:h-[18px]" />
           ) : isCompleted ? (
-            <CheckCircle2 size={18} />
+            <CheckCircle2 size={20} className="sm:w-[18px] sm:h-[18px]" />
           ) : (
-            <Circle size={18} />
+            <Circle size={20} className="sm:w-[18px] sm:h-[18px]" />
           )}
         </button>
 
         {/* Type icon */}
-        <div className={`flex-shrink-0 w-6 h-6 md:w-7 md:h-7 rounded-md flex items-center justify-center ${
+        <div className={`flex-shrink-0 w-7 h-7 sm:w-7 sm:h-7 rounded-lg sm:rounded-md flex items-center justify-center ${
           isKanban
             ? isDark ? 'bg-zinc-800 text-zinc-400' : 'bg-zinc-100 text-zinc-500'
             : isDark ? 'bg-zinc-800 text-zinc-400' : 'bg-zinc-100 text-zinc-500'
         }`}>
-          {isKanban ? <LayoutGrid size={12} /> : <CheckSquare size={12} />}
+          {isKanban ? <LayoutGrid size={13} /> : <CheckSquare size={13} />}
         </div>
 
         {/* Main content area */}
-        <div className="flex-1 min-w-0 flex items-center gap-3">
-          {/* Sender / board info */}
-          <div className="w-[100px] md:w-[120px] flex-shrink-0 hidden sm:block">
-            <p className={`text-xs md:text-[13px] font-medium truncate ${
-              isCompleted
-                ? isDark ? 'text-zinc-600' : 'text-zinc-400'
-                : isDark ? 'text-zinc-300' : 'text-zinc-700'
-            }`}>
-              {task.assigner ? `${task.assigner.firstName}` : 'System'}
-            </p>
-            <p className={`text-[10px] truncate ${isDark ? 'text-zinc-600' : 'text-zinc-400'}`}>
-              {task.bordTitle}
-            </p>
-          </div>
-
-          {/* Task content + note */}
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2">
-              <p className={`text-sm md:text-[15px] truncate ${
+        <div className="flex-1 min-w-0">
+          {/* Mobile: stacked layout. Desktop: inline layout */}
+          <div className="sm:flex sm:items-center sm:gap-3">
+            {/* Sender / board info */}
+            <div className="hidden sm:block sm:w-[120px] flex-shrink-0">
+              <p className={`text-[13px] font-medium truncate ${
                 isCompleted
-                  ? isDark ? 'text-zinc-600 line-through' : 'text-zinc-400 line-through'
-                  : task.priority === 'high'
-                    ? isDark ? 'text-zinc-100 font-semibold' : 'text-zinc-900 font-semibold'
-                    : isDark ? 'text-zinc-200' : 'text-zinc-800'
+                  ? isDark ? 'text-zinc-600' : 'text-zinc-400'
+                  : isDark ? 'text-zinc-300' : 'text-zinc-700'
               }`}>
-                {task.content}
+                {task.assigner ? `${task.assigner.firstName}` : 'System'}
               </p>
+              <p className={`text-[10px] truncate ${isDark ? 'text-zinc-600' : 'text-zinc-400'}`}>
+                {task.bordTitle}
+              </p>
+            </div>
+
+            {/* Task content + meta */}
+            <div className="flex-1 min-w-0">
+              {/* Task title */}
+              <div className="flex items-start sm:items-center gap-2">
+                <p className={`text-[15px] sm:text-[15px] leading-snug ${
+                  isCompleted
+                    ? isDark ? 'text-zinc-600 line-through' : 'text-zinc-400 line-through'
+                    : task.priority === 'high'
+                      ? isDark ? 'text-zinc-100 font-semibold' : 'text-zinc-900 font-semibold'
+                      : isDark ? 'text-zinc-200' : 'text-zinc-800'
+                }`}>
+                  {task.content}
+                </p>
+                {task.executionNote && (
+                  <span className={`hidden sm:inline text-xs truncate ${isDark ? 'text-zinc-600' : 'text-zinc-400'}`}>
+                    — {task.executionNote}
+                  </span>
+                )}
+              </div>
+
+              {/* Mobile: assigner + board + date on second row */}
+              <div className="flex items-center gap-1.5 mt-1 sm:hidden">
+                <p className={`text-[12px] truncate ${isDark ? 'text-zinc-500' : 'text-zinc-400'}`}>
+                  {task.assigner ? task.assigner.firstName : 'System'}
+                </p>
+                <span className={`text-[12px] ${isDark ? 'text-zinc-700' : 'text-zinc-300'}`}>·</span>
+                <p className={`text-[12px] truncate ${isDark ? 'text-zinc-600' : 'text-zinc-400'}`}>
+                  {task.bordTitle}
+                </p>
+                {dueDateInfo && (
+                  <>
+                    <span className={`text-[12px] ${isDark ? 'text-zinc-700' : 'text-zinc-300'}`}>·</span>
+                    <span className={`text-[11px] font-medium ${
+                      dueDateInfo.overdue
+                        ? 'text-red-500 font-semibold'
+                        : isDark ? 'text-zinc-500' : 'text-zinc-400'
+                    }`}>
+                      {dueDateInfo.text}
+                    </span>
+                  </>
+                )}
+                {task.priority === 'high' && (
+                  <Flag size={11} className={isDark ? 'text-red-400 ml-0.5' : 'text-red-500 ml-0.5'} />
+                )}
+              </div>
+
               {task.executionNote && (
-                <span className={`hidden sm:inline text-xs truncate ${isDark ? 'text-zinc-600' : 'text-zinc-400'}`}>
-                  — {task.executionNote}
+                <p className={`sm:hidden text-[12px] mt-0.5 truncate ${isDark ? 'text-zinc-600' : 'text-zinc-400'}`}>
+                  {task.executionNote}
+                </p>
+              )}
+
+              {/* Kanban column selector — inline pill */}
+              {isKanban && hasColumns && (
+                <div className="relative inline-block mt-1">
+                  <button
+                    onClick={(e) => { e.stopPropagation(); onToggleDropdown(task._id) }}
+                    disabled={isMoving}
+                    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-medium transition-all ${
+                      isMoving
+                        ? isDark ? 'bg-zinc-800 text-zinc-600' : 'bg-zinc-100 text-zinc-400'
+                        : isDark
+                          ? 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'
+                          : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200'
+                    }`}
+                  >
+                    {isMoving && <Loader2 size={8} className="animate-spin" />}
+                    {task.columnTitle || 'No column'}
+                    <ChevronDown size={8} />
+                  </button>
+
+                  {columnDropdownId === task._id && (
+                    <div
+                      className={`absolute top-full left-0 mt-1 rounded-lg border shadow-xl z-30 min-w-[140px] overflow-hidden ${
+                        isDark ? 'bg-zinc-800 border-zinc-700' : 'bg-white border-zinc-200'
+                      }`}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      {task.availableColumns.map((col) => (
+                        <button
+                          key={col.id}
+                          onClick={() => onMoveColumn(task._id, col.id, col.title)}
+                          disabled={col.id === task.columnId}
+                          className={`w-full text-left px-3 py-1.5 text-xs transition-colors flex items-center gap-2 ${
+                            col.id === task.columnId
+                              ? isDark ? 'bg-zinc-700/50 text-zinc-300 font-medium' : 'bg-zinc-100 text-zinc-600 font-medium'
+                              : isDark ? 'text-zinc-200 hover:bg-zinc-700' : 'text-zinc-700 hover:bg-zinc-50'
+                          }`}
+                        >
+                          {col.id === task.columnId && <CheckCircle2 size={10} className="text-zinc-400 flex-shrink-0" />}
+                          <span className={col.id === task.columnId ? '' : 'ml-[18px]'}>{col.title}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Kanban column label only (no available columns) */}
+              {isKanban && !hasColumns && task.columnTitle && (
+                <span className={`inline-flex items-center gap-1 mt-1 text-[10px] font-medium px-2 py-0.5 rounded-md ${
+                  isDark ? 'bg-zinc-800 text-zinc-400' : 'bg-zinc-100 text-zinc-500'
+                }`}>
+                  {task.columnTitle}
                 </span>
               )}
             </div>
-
-            {/* Mobile: show board + assigner on a second row */}
-            <div className="flex items-center gap-2 mt-0.5 sm:hidden">
-              <p className={`text-[10px] truncate ${isDark ? 'text-zinc-600' : 'text-zinc-400'}`}>
-                {task.assigner ? task.assigner.firstName : 'System'} · {task.bordTitle}
-              </p>
-            </div>
-
-            {/* Kanban column selector — inline pill */}
-            {isKanban && hasColumns && (
-              <div className="relative inline-block mt-1">
-                <button
-                  onClick={(e) => { e.stopPropagation(); onToggleDropdown(task._id) }}
-                  disabled={isMoving}
-                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-medium transition-all ${
-                    isMoving
-                      ? isDark ? 'bg-zinc-800 text-zinc-600' : 'bg-zinc-100 text-zinc-400'
-                      : isDark
-                        ? 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'
-                        : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200'
-                  }`}
-                >
-                  {isMoving && <Loader2 size={8} className="animate-spin" />}
-                  {task.columnTitle || 'No column'}
-                  <ChevronDown size={8} />
-                </button>
-
-                {columnDropdownId === task._id && (
-                  <div
-                    className={`absolute top-full left-0 mt-1 rounded-lg border shadow-xl z-30 min-w-[140px] overflow-hidden ${
-                      isDark ? 'bg-zinc-800 border-zinc-700' : 'bg-white border-zinc-200'
-                    }`}
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    {task.availableColumns.map((col) => (
-                      <button
-                        key={col.id}
-                        onClick={() => onMoveColumn(task._id, col.id, col.title)}
-                        disabled={col.id === task.columnId}
-                        className={`w-full text-left px-3 py-1.5 text-xs transition-colors flex items-center gap-2 ${
-                          col.id === task.columnId
-                            ? isDark ? 'bg-zinc-700/50 text-zinc-300 font-medium' : 'bg-zinc-100 text-zinc-600 font-medium'
-                            : isDark ? 'text-zinc-200 hover:bg-zinc-700' : 'text-zinc-700 hover:bg-zinc-50'
-                        }`}
-                      >
-                        {col.id === task.columnId && <CheckCircle2 size={10} className="text-zinc-400 flex-shrink-0" />}
-                        <span className={col.id === task.columnId ? '' : 'ml-[18px]'}>{col.title}</span>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Kanban column label only (no available columns) */}
-            {isKanban && !hasColumns && task.columnTitle && (
-              <span className={`inline-flex items-center gap-1 mt-1 text-[10px] font-medium px-2 py-0.5 rounded-md ${
-                isDark ? 'bg-zinc-800 text-zinc-400' : 'bg-zinc-100 text-zinc-500'
-              }`}>
-                {task.columnTitle}
-              </span>
-            )}
           </div>
 
-          {/* Right side: badges + date */}
-          <div className="flex items-center gap-2 md:gap-3 flex-shrink-0">
+          {/* Right side: badges + date — desktop only */}
+          <div className="hidden sm:flex items-center gap-3 flex-shrink-0">
             {/* Priority flag (non-normal only) */}
             {task.priority === 'high' && (
               <Flag size={12} className={isDark ? 'text-red-400' : 'text-red-500'} />
@@ -552,7 +581,7 @@ function TaskRow({
 
             {/* Due date */}
             {dueDateInfo && (
-              <span className={`text-[10px] md:text-[11px] font-medium whitespace-nowrap ${
+              <span className={`text-[11px] font-medium whitespace-nowrap ${
                 dueDateInfo.overdue
                   ? 'text-red-500 font-semibold'
                   : isDark ? 'text-zinc-500' : 'text-zinc-400'
@@ -563,7 +592,7 @@ function TaskRow({
 
             {/* Created date as fallback */}
             {!dueDateInfo && (
-              <span className={`text-[10px] md:text-[11px] whitespace-nowrap ${isDark ? 'text-zinc-600' : 'text-zinc-400'}`}>
+              <span className={`text-[11px] whitespace-nowrap ${isDark ? 'text-zinc-600' : 'text-zinc-400'}`}>
                 {formatCreatedDate(task.createdAt)}
               </span>
             )}

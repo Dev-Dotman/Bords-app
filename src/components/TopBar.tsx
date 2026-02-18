@@ -583,6 +583,8 @@ export function TopBar() {
               </button>
               <button
                 onClick={() => {
+                  // Delete from cloud first (fire-and-forget), then local
+                  useBoardSyncStore.getState().deleteBoardFromCloud(currentBoardId)
                   deleteBoard(currentBoardId)
                   setShowDeleteConfirm(false)
                 }}

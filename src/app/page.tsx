@@ -36,6 +36,7 @@ import { ConnectionLineModal } from "@/components/ConnectionLineModal";
 import { useGridStore } from "@/store/gridStore";
 import { useDragModeStore } from "@/store/dragModeStore";
 import { usePresentationStore } from "@/store/presentationStore";
+import { useFullScreenStore } from "@/store/fullScreenStore";
 import { AssignTaskModal } from "@/components/delegation/AssignTaskModal";
 import { useDelegationStore } from "@/store/delegationStore";
 import { useOrganizationStore } from "@/store/organizationStore";
@@ -49,7 +50,7 @@ export default function Home() {
   const router = useRouter();
   const { data: session, status } = useSession();
   const [hoveredCell, setHoveredCell] = useState<number | null>(null);
-  const [isMobile, setIsMobile] = useState(false);
+  const [deviceType, setDeviceType] = useState<'desktop' | 'tablet-landscape' | 'tablet-portrait' | 'phone'>('desktop');
   const isDark = useThemeStore((state) => state.isDark);
   const setCurrentUserId = useBoardStore((state) => state.setCurrentUserId);
   
@@ -143,22 +144,45 @@ export default function Home() {
 
   const isDragEnabled = useDragModeStore((state) => state.isDragEnabled);
   const { isPresentationMode, setPresentationMode } = usePresentationStore();
+  const { isFullScreen, setFullScreen } = useFullScreenStore();
 
-  // Presentation mode: computed transform to fit all items in viewport
+  // Full screen mode: computed transform to fit all items in viewport
   const [presTransform, setPresTransform] = useState<{ tx: number; ty: number; s: number } | null>(null)
   const [presHintVisible, setPresHintVisible] = useState(false)
   const canvasRef = useRef<HTMLDivElement>(null)
 
-  // Detect mobile device
+  // Detect device type: phone, tablet (portrait/landscape), or desktop
   useEffect(() => {
-    const checkMobile = () => {
-      setIsMobile(window.innerWidth < 1024); // Consider tablets as mobile too
+    const checkDevice = () => {
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      const isLandscape = w > h;
+      // Detect touch-capable tablets via UA or pointer
+      const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 1;
+      const isTabletUA = /iPad|Macintosh.*Mobile/i.test(navigator.userAgent) ||
+                         (/Android/i.test(navigator.userAgent) && !/Mobile/i.test(navigator.userAgent));
+      const isTabletSize = isTouchDevice && Math.min(w, h) >= 600 && Math.max(w, h) >= 900;
+      const isTablet = isTabletUA || isTabletSize;
+
+      if (isTablet) {
+        setDeviceType(isLandscape ? 'tablet-landscape' : 'tablet-portrait');
+      } else if (w < 1024 && isTouchDevice) {
+        setDeviceType('phone');
+      } else if (w < 768) {
+        setDeviceType('phone');
+      } else {
+        setDeviceType('desktop');
+      }
     };
-    
-    checkMobile();
-    window.addEventListener('resize', checkMobile);
-    
-    return () => window.removeEventListener('resize', checkMobile);
+
+    checkDevice();
+    window.addEventListener('resize', checkDevice);
+    window.addEventListener('orientationchange', checkDevice);
+
+    return () => {
+      window.removeEventListener('resize', checkDevice);
+      window.removeEventListener('orientationchange', checkDevice);
+    };
   }, []);
 
   // Set current user ID and redirect to login if not authenticated
@@ -270,9 +294,19 @@ export default function Home() {
     return () => window.removeEventListener('keydown', handleKey)
   }, [isPresentationMode, setPresentationMode]);
 
-  // Presentation mode: compute bounding box of all items → scale to fit viewport
+  // Full screen mode: Escape key to exit
   useEffect(() => {
-    if (!isPresentationMode) {
+    if (!isFullScreen) return
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setFullScreen(false)
+    }
+    window.addEventListener('keydown', handleKey)
+    return () => window.removeEventListener('keydown', handleKey)
+  }, [isFullScreen, setFullScreen]);
+
+  // Full screen mode: compute bounding box of all items → scale to fit viewport
+  useEffect(() => {
+    if (!isFullScreen) {
       setPresTransform(null)
       setPresHintVisible(false)
       return
@@ -320,7 +354,7 @@ export default function Home() {
     }, 50)
 
     return () => { clearTimeout(hintTimer); clearTimeout(computeTimer) }
-  }, [isPresentationMode]);
+  }, [isFullScreen]);
 
   // Listen for board deletion to cleanup associated items
   useEffect(() => {
@@ -395,23 +429,73 @@ export default function Home() {
     return null;
   }
 
-  // Show mobile warning if on mobile device
-  if (isMobile) {
+  // Show appropriate screen for non-desktop devices
+  if (deviceType === 'phone') {
     return (
-      <div className="fixed inset-0 bg-white flex items-center justify-center p-6">
+      <div className="fixed inset-0 bg-zinc-950 flex items-center justify-center p-6">
         <div className="max-w-md text-center">
-          <h1 className="text-2xl font-bold text-gray-900 mb-4">
+          <div className="w-16 h-16 bg-black rounded-2xl flex items-center justify-center p-3 mx-auto mb-6 border border-zinc-800">
+            <img src="/bordclear.png" alt="BORDS" className="w-full h-full object-contain" />
+          </div>
+          <h1 className="text-2xl font-bold text-white mb-3">
             Desktop Only
           </h1>
-          <p className="text-gray-600 mb-6">
-            BORDS is currently only available on desktop devices. Please access this application from a computer for the best experience.
+          <p className="text-zinc-400 mb-8 leading-relaxed">
+            The BORDS canvas requires a larger screen. You can still view and manage your assigned tasks from your inbox.
           </p>
-          <button
-            onClick={() => router.push('/login')}
-            className="px-6 py-3 bg-black text-white rounded-lg font-medium hover:bg-gray-800 transition-colors"
-          >
-            Sign Out
-          </button>
+          <div className="flex flex-col gap-3">
+            <button
+              onClick={() => router.push('/inbox')}
+              className="w-full px-6 py-3.5 bg-white text-black rounded-xl font-semibold hover:bg-zinc-100 transition-colors"
+            >
+              View Inbox
+            </button>
+            <button
+              onClick={() => router.push('/login')}
+              className="w-full px-6 py-3.5 bg-zinc-800 text-zinc-300 rounded-xl font-medium hover:bg-zinc-700 transition-colors border border-zinc-700"
+            >
+              Sign Out
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (deviceType === 'tablet-portrait') {
+    return (
+      <div className="fixed inset-0 bg-zinc-950 flex items-center justify-center p-8">
+        <div className="max-w-lg text-center">
+          <div className="w-16 h-16 bg-black rounded-2xl flex items-center justify-center p-3 mx-auto mb-6 border border-zinc-800">
+            <img src="/bordclear.png" alt="BORDS" className="w-full h-full object-contain" />
+          </div>
+          <h1 className="text-2xl font-bold text-white mb-3">
+            Rotate Your Device
+          </h1>
+          <p className="text-zinc-400 mb-4 leading-relaxed">
+            BORDS is available on your tablet in landscape mode. Please rotate your device horizontally to use the full canvas.
+          </p>
+          {/* Rotate icon */}
+          <div className="mb-8">
+            <svg className="w-16 h-16 text-zinc-600 mx-auto animate-pulse" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 1.5H8.25A2.25 2.25 0 006 3.75v16.5a2.25 2.25 0 002.25 2.25h7.5A2.25 2.25 0 0018 20.25V3.75a2.25 2.25 0 00-2.25-2.25H13.5m-3 0V3h3V1.5m-3 0h3m-3 18.75h3" />
+              <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 10.5l2 2m0 0l-2 2m2-2H15" />
+            </svg>
+          </div>
+          <div className="flex flex-col gap-3">
+            <button
+              onClick={() => router.push('/inbox')}
+              className="w-full px-6 py-3.5 bg-white text-black rounded-xl font-semibold hover:bg-zinc-100 transition-colors"
+            >
+              View Inbox Instead
+            </button>
+            <button
+              onClick={() => router.push('/login')}
+              className="w-full px-6 py-3.5 bg-zinc-800 text-zinc-300 rounded-xl font-medium hover:bg-zinc-700 transition-colors border border-zinc-700"
+            >
+              Sign Out
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -451,13 +535,13 @@ export default function Home() {
   return (
     <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
       <div
-        className={`fixed inset-0 ${isDark ? "bg-zinc-900" : "bg-zinc-100"} app-background ${isPresentationMode ? 'overflow-hidden' : 'overflow-auto'}`}
-        onClick={isPresentationMode ? undefined : handleGlobalClick}
+        className={`fixed inset-0 ${isDark ? "bg-zinc-900" : "bg-zinc-100"} app-background ${isFullScreen ? 'overflow-hidden' : 'overflow-auto'}`}
+        onClick={isFullScreen ? undefined : handleGlobalClick}
         style={{
-          backgroundImage: !isPresentationMode && currentBoard?.backgroundImage
+          backgroundImage: !isFullScreen && currentBoard?.backgroundImage
             ? `url(${currentBoard.backgroundImage})`
             : undefined,
-          backgroundColor: isPresentationMode
+          backgroundColor: isFullScreen
             ? (isDark ? '#09090b' : '#f4f4f5')
             : (currentBoard?.backgroundColor || undefined),
           backgroundSize: "cover",
@@ -467,7 +551,7 @@ export default function Home() {
       >
 
       {/* Stale board banner — newer version available on cloud */}
-      {currentBoardIsStale && !isPresentationMode && (
+      {currentBoardIsStale && !isPresentationMode && !isFullScreen && (
         <motion.div
           initial={{ y: -60, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
@@ -508,8 +592,8 @@ export default function Home() {
         </motion.div>
       )}
 
-      {/* Fullscreen presentation mode UI */}
-      {isPresentationMode && (
+      {/* Fullscreen mode UI */}
+      {isFullScreen && (
         <>
           {/* Interaction blocker — covers the scaled canvas */}
           <div className="fixed inset-0" style={{ zIndex: 100, pointerEvents: 'auto' }} />
@@ -519,7 +603,7 @@ export default function Home() {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.3 }}
-            onClick={() => setPresentationMode(false)}
+            onClick={() => setFullScreen(false)}
             className={`fixed bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-2 px-5 py-2.5 rounded-xl font-medium text-sm shadow-2xl backdrop-blur-md transition-colors ${
               isDark
                 ? 'bg-white/10 text-white hover:bg-white/20 border border-white/10'
@@ -548,7 +632,7 @@ export default function Home() {
       )}
 
       <div className="relative min-h-[470vh]">
-        {!isPresentationMode && (
+        {!isPresentationMode && !isFullScreen && (
           <GridBackground
             hoveredCell={hoveredCell}
             onCellHover={setHoveredCell}
@@ -559,9 +643,9 @@ export default function Home() {
         {/* Content and Connection Lines */}
         <div
           ref={canvasRef}
-          className={`fixed inset-0 ${isPresentationMode ? 'overflow-visible' : 'overflow-auto'} pb-[450vh]`}
+          className={`fixed inset-0 ${isFullScreen ? 'overflow-visible' : 'overflow-auto'} pb-[450vh]`}
           data-board-canvas
-          style={isPresentationMode && presTransform ? {
+          style={isFullScreen && presTransform ? {
             transform: `translate(${presTransform.tx}px, ${presTransform.ty}px) scale(${presTransform.s})`,
             transformOrigin: '0 0',
             pointerEvents: 'none',
@@ -626,36 +710,46 @@ export default function Home() {
           </div>
         </div>
 
-        {/* UI Controls Layer - Higher z-index — hidden in presentation mode */}
-        {!isPresentationMode && (
+        {/* UI Controls Layer - Higher z-index */}
+        {/* Full screen: hide everything. Presentation: show only TopBar (collapsed). Normal: show all. */}
+        {!isFullScreen && (
         <div
           className="fixed inset-0 pointer-events-none"
           style={{ zIndex: 50 }}
         >
-          {/* Connection Lines + Controls */}
+          {/* Connection Lines + Controls — hidden in presentation mode */}
+          {!isPresentationMode && (
           <div className="pointer-events-auto">
             {currentBoardId && <Connections key={currentBoardId} />}
           </div>
+          )}
 
           {/* Navigation Controls */}
           <div className="pointer-events-auto">
+            {/* TopBar always visible — it self-collapses in presentation mode */}
             <TopBar />
-            <Dock />
-            <SideBar />
+            {!isPresentationMode && (
+              <>
+                <Dock />
+                <SideBar />
 
-            {/* Modals */}
-            <ExportModal />
-            <MediaModal />
-            <BackgroundModal />
-            <ConnectionLineModal />
-            <AssignTaskModal />
+                {/* Modals */}
+                <ExportModal />
+                <MediaModal />
+                <BackgroundModal />
+                <ConnectionLineModal />
+                <AssignTaskModal />
+              </>
+            )}
           </div>
 
-          {/* Interaction Controls */}
+          {/* Interaction Controls — hidden in presentation mode */}
+          {!isPresentationMode && (
           <div className="pointer-events-auto">
             <DragLayer />
             <OrganizePanel />
           </div>
+          )}
         </div>
         )}
       </div>
