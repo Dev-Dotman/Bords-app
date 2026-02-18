@@ -17,6 +17,7 @@ import { ConnectionNode } from "./ConnectionNode";
 import { useZIndexStore } from '../store/zIndexStore'
 import { DeleteConfirmModal } from './DeleteConfirmModal'
 import { ColorPicker } from './ColorPicker'
+import { useViewportScale } from '../hooks/useViewportScale'
 
 export function Media({
   id,
@@ -32,6 +33,7 @@ export function Media({
   const [isHovered, setIsHovered] = useState(false);
   const [showNodes, setShowNodes] = useState(false);
   const [showColorPicker, setShowColorPicker] = useState(false);
+  const colorBtnRef = useRef<HTMLButtonElement>(null);
   const isDark = useThemeStore((state) => state.isDark);
   const { updateMedia, deleteMedia } = useMediaStore();
   const isDragEnabled = useDragModeStore((state) => state.isDragEnabled);
@@ -43,6 +45,7 @@ export function Media({
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const { bringToFront } = useZIndexStore()
   const zIndex = useZIndexStore((state) => state.zIndexMap[id] || 1)
+  const vScale = useViewportScale()
 
   const handleDelete = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -148,8 +151,8 @@ export function Media({
         onFocus={(e) => e.preventDefault()}
         onDoubleClick={handleDoubleClick}
         onMouseDown={() => bringToFront(id)}
-        onClick={() => setShowNodes(true)}
-        onBlur={() => setShowNodes(false)}
+        onClick={() => { setShowNodes(true); setIsHovered(true); }}
+        onBlur={() => { setShowNodes(false); setIsHovered(false); }}
         onMouseEnter={() => {
           setIsHovered(true);
           setShowNodes(true);
@@ -173,19 +176,19 @@ export function Media({
         )}
         <Resizable
           size={{
-            width: type === "video" ? width * 1.4 : width,
-            height: type === "image" ? height + 8 : 'auto',
+            width: (type === "video" ? width * 1.4 : width) * vScale,
+            height: type === "image" ? (height + 8) * vScale : 'auto',
           }}
-          minWidth={150}
-          minHeight={100}
+          minWidth={150 * vScale}
+          minHeight={100 * vScale}
           enable={{
             right: true,
             bottom: true,
             bottomRight: true,
           }}
           onResizeStop={(e, direction, ref, d) => {
-            const newWidth = type === "video" ? Math.round((width * 1.4 + d.width) / 1.4) : width + d.width
-            const newHeight = type === "image" ? height + d.height : height
+            const newWidth = type === "video" ? Math.round((width * 1.4 + d.width / vScale) / 1.4) : width + Math.round(d.width / vScale)
+            const newHeight = type === "image" ? height + Math.round(d.height / vScale) : height
             updateMedia(id, { width: newWidth, height: newHeight })
           }}
           handleStyles={{
@@ -200,7 +203,7 @@ export function Media({
           }}
         >
         <div
-          className={`rounded-2xl border-2 overflow-hidden shadow-lg transition-all duration-200
+          className={`rounded-2xl border-2 overflow-hidden shadow-lg transition-all duration-200 h-full
           ${
             isSelected
               ? "border-blue-500 shadow-blue-500/50"
@@ -218,8 +221,7 @@ export function Media({
         >
           {/* Media Content */}
           <div
-            className={`relative ${type === "video" ? "aspect-video" : ""} ${isDark ? "bg-zinc-900" : "bg-zinc-100"}`}
-            style={type === "image" ? { height: `${height}px` } : undefined}
+            className={`relative ${type === "video" ? "aspect-video" : "h-full"} ${isDark ? "bg-zinc-900" : "bg-zinc-100"}`}
           >
             {type === "image" ? (
               imageError ? (
@@ -243,7 +245,7 @@ export function Media({
                   <img
                     src={url}
                     alt={title || "Media"}
-                    className="w-full h-full object-contain pointer-events-none"
+                    className="w-full h-full object-cover pointer-events-none"
                     onError={() => setImageError(true)}
                   />
                   {/* Overlay to make entire image area draggable */}
@@ -308,6 +310,7 @@ export function Media({
             ${isHovered ? "opacity-100" : "opacity-0"}`}
           >
             <button
+              ref={colorBtnRef}
               onClick={(e) => {
                 e.stopPropagation();
                 setShowColorPicker(!showColorPicker);
@@ -348,8 +351,8 @@ export function Media({
               onSelect={(c) => updateMedia(id, { color: c })}
               onClose={() => setShowColorPicker(false)}
               label="Background Color"
-              position="top-14 right-2"
               useHex
+              triggerRef={colorBtnRef}
             />
           )}
         </div>

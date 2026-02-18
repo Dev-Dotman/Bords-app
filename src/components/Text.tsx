@@ -15,6 +15,7 @@ export function Text({ id, text, position, fontSize, color, rotation = 0 }: Text
   const [isSelected, setIsSelected] = useState(false)
   const [isHovered, setIsHovered] = useState(false)
   const [showColorPicker, setShowColorPicker] = useState(false)
+  const colorBtnRef = useRef<HTMLButtonElement>(null)
   const { bringToFront } = useZIndexStore()
   const zIndex = useZIndexStore((state) => state.zIndexMap[id] || 1)
   const textRef = useRef<HTMLDivElement>(null);
@@ -96,6 +97,7 @@ export function Text({ id, text, position, fontSize, color, rotation = 0 }: Text
       }}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
+      onTouchStart={() => setIsSelected(true)}
       data-text-id={id}
       data-item-id={id}
       onFocus={(e) => e.preventDefault()}
@@ -137,13 +139,18 @@ export function Text({ id, text, position, fontSize, color, rotation = 0 }: Text
       )}
 
       {isSelected && !isEditing && (
-          <div className="absolute -top-14 left-1/2 -translate-x-1/2 flex items-center gap-1 bg-white/90 backdrop-blur-md rounded-full shadow-lg border border-black/10 p-1.5">
+          <div
+            className="absolute -top-14 left-1/2 -translate-x-1/2 flex items-center gap-1 bg-white/90 backdrop-blur-md rounded-full shadow-lg border border-black/10 p-1.5 touch-action-bar"
+            data-text-id={id}
+            onPointerDown={(e) => e.stopPropagation()}
+            onTouchStart={(e) => e.stopPropagation()}
+          >
               <button
                 onClick={(e) => {
                   e.stopPropagation();
                   adjustFontSize(-2);
                 }}
-                className="p-2 hover:bg-blue-500/10 rounded-full transition-all duration-200 hover:scale-110"
+                className="p-2 hover:bg-blue-500/10 rounded-full transition-all duration-200 hover:scale-110 min-w-[40px] min-h-[40px] flex items-center justify-center"
                 title="Decrease font size"
               >
                 <ZoomOut size={16} className="text-gray-700" />
@@ -158,7 +165,7 @@ export function Text({ id, text, position, fontSize, color, rotation = 0 }: Text
                   e.stopPropagation();
                   adjustFontSize(2);
                 }}
-                className="p-2 hover:bg-blue-500/10 rounded-full transition-all duration-200 hover:scale-110"
+                className="p-2 hover:bg-blue-500/10 rounded-full transition-all duration-200 hover:scale-110 min-w-[40px] min-h-[40px] flex items-center justify-center"
                 title="Increase font size"
               >
                 <ZoomIn size={16} className="text-gray-700" />
@@ -171,7 +178,7 @@ export function Text({ id, text, position, fontSize, color, rotation = 0 }: Text
                   e.stopPropagation();
                   rotateCounterClockwise();
                 }}
-                className="p-2 hover:bg-purple-500/10 rounded-full transition-all duration-200 hover:scale-110"
+                className="p-2 hover:bg-purple-500/10 rounded-full transition-all duration-200 hover:scale-110 min-w-[40px] min-h-[40px] flex items-center justify-center"
                 title="Rotate left (15°)"
               >
                 <RotateCcw size={16} className="text-purple-600" />
@@ -187,7 +194,7 @@ export function Text({ id, text, position, fontSize, color, rotation = 0 }: Text
                   e.stopPropagation();
                   rotateClockwise();
                 }}
-                className="p-2 hover:bg-purple-500/10 rounded-full transition-all duration-200 hover:scale-110"
+                className="p-2 hover:bg-purple-500/10 rounded-full transition-all duration-200 hover:scale-110 min-w-[40px] min-h-[40px] flex items-center justify-center"
                 title="Rotate right (15°)"
               >
                 <RotateCw size={16} className="text-purple-600" />
@@ -198,6 +205,7 @@ export function Text({ id, text, position, fontSize, color, rotation = 0 }: Text
               {/* Color Picker Button */}
               <div className="relative">
                 <button
+                  ref={colorBtnRef}
                   onClick={(e) => {
                     e.stopPropagation();
                     setShowColorPicker(!showColorPicker);
@@ -221,7 +229,7 @@ export function Text({ id, text, position, fontSize, color, rotation = 0 }: Text
                     }}
                     onClose={() => setShowColorPicker(false)}
                     label="Text Color"
-                    position="absolute top-12 left-1/2 -translate-x-1/2 z-[9999]"
+                    triggerRef={colorBtnRef}
                   />
                 )}
               </div>
@@ -234,7 +242,7 @@ export function Text({ id, text, position, fontSize, color, rotation = 0 }: Text
                   removeConnectionsByItemId(id);
                   deleteText(id);
                 }}
-                className="p-2 hover:bg-red-500/10 rounded-full transition-all duration-200 hover:scale-110"
+                className="p-2 hover:bg-red-500/10 rounded-full transition-all duration-200 hover:scale-110 min-w-[40px] min-h-[40px] flex items-center justify-center"
                 title="Delete text"
               >
                 <Trash2 size={16} className="text-red-600" />

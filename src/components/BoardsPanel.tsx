@@ -8,10 +8,11 @@ import { useKanbanStore } from '../store/kanbanStore'
 import { useMediaStore } from '../store/mediaStore'
 import { useDrawingStore } from '../store/drawingStore'
 import { useConnectionStore } from '../store/connectionStore'
-import { Trash2, Edit2, Plus, Layout, X } from 'lucide-react'
+import { Trash2, Edit2, Plus, Layout, X, Share2 } from 'lucide-react'
 import { useState, useRef, useEffect, useMemo } from 'react'
 import { format } from 'date-fns'
 import { useSession } from 'next-auth/react'
+import { SyncButton, ShareModal } from './BoardSyncControls'
 
 interface BoardsPanelProps {
   isOpen: boolean
@@ -43,6 +44,7 @@ export function BoardsPanel({ isOpen, onClose }: BoardsPanelProps) {
   const [boardToDelete, setBoardToDelete] = useState<string | null>(null)
   const [editingBoardId, setEditingBoardId] = useState<string | null>(null)
   const [editingBoardName, setEditingBoardName] = useState('')
+  const [sharingBoardId, setSharingBoardId] = useState<string | null>(null)
   const panelRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -245,7 +247,20 @@ export function BoardsPanel({ isOpen, onClose }: BoardsPanelProps) {
                 </div>
               </div>
               
-              <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+              <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                <SyncButton localBoardId={board.id} boardName={board.name} />
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setSharingBoardId(board.id)
+                  }}
+                  className={`p-1.5 rounded-lg transition-colors ${
+                    isDark ? 'hover:bg-zinc-600 text-zinc-400' : 'hover:bg-gray-200 text-gray-500'
+                  }`}
+                  title="Share board"
+                >
+                  <Share2 size={14} />
+                </button>
                 <button
                   onClick={(e) => {
                     e.stopPropagation()
@@ -324,6 +339,14 @@ export function BoardsPanel({ isOpen, onClose }: BoardsPanelProps) {
             </div>
           </div>
         </div>
+      )}
+      {/* Share Modal */}
+      {sharingBoardId && (
+        <ShareModal
+          localBoardId={sharingBoardId}
+          boardName={userBoards.find(b => b.id === sharingBoardId)?.name || 'Board'}
+          onClose={() => setSharingBoardId(null)}
+        />
       )}
     </motion.div>
   )

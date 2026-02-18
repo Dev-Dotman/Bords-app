@@ -128,6 +128,49 @@ export function ConnectionLine({ fromId, toId, color }: ConnectionLineProps) {
   )
 }
 
+/**
+ * ConnectionLines — renders ONLY the SVG lines.
+ * Intended to be placed in the canvas layer (behind board items).
+ */
+export function ConnectionLines() {
+  const connections = useConnectionStore((state) => state.connections)
+  const isVisible = useConnectionStore((state) => state.isVisible)
+  const currentBoardId = useBoardStore((state) => state.currentBoardId ?? '')
+
+  const boardConnections = connections.filter(conn => conn.boardId === currentBoardId)
+
+  if (!isVisible || boardConnections.length === 0) return null
+
+  return (
+    <>
+      <div className="fixed inset-0 pointer-events-none" data-board-connections style={{ zIndex: 0 }}>
+        <svg
+          className="w-full h-full"
+          style={{ pointerEvents: 'none', overflow: 'visible' }}
+        >
+          {boardConnections.map(connection => (
+            <ConnectionLine
+              key={connection.id}
+              fromId={connection.fromId}
+              toId={connection.toId}
+              color={connection.color}
+            />
+          ))}
+        </svg>
+      </div>
+      <style>{`
+        .connection-line {
+          filter: drop-shadow(0 0 4px rgba(0,0,0,0.1));
+        }
+        .connection-line:hover {
+          stroke-opacity: 1;
+          filter: drop-shadow(0 0 6px rgba(0,0,0,0.2));
+        }
+      `}</style>
+    </>
+  )
+}
+
 export function Connections() {
   const [showConnectionsView, setShowConnectionsView] = useState(false)
   const [isCollapsed, setIsCollapsed] = useState(true)
@@ -135,6 +178,7 @@ export function Connections() {
     removeConnection, 
     selectedItems, 
     addConnection, 
+    clearSelection,
     clearBoardConnections // Use the new method
   } = useConnectionStore()
   const connections = useConnectionStore((state) => state.connections)
@@ -315,36 +359,8 @@ export function Connections() {
 
   return (
     <>
-      {/* SVG Container */}
-      <div className="fixed inset-0 pointer-events-none" style={{ zIndex: 0 }}>
-        <svg 
-          className="w-full h-full"
-          style={{ 
-            pointerEvents: 'none',
-            overflow: 'visible'
-          }}
-        >
-          {boardConnections.map(connection => (
-            <ConnectionLine
-              key={connection.id}
-              fromId={connection.fromId}
-              toId={connection.toId}
-              color={connection.color}
-            />
-          ))}
-        </svg>
-      </div>
-      <style>{`
-        .connection-line {
-          filter: drop-shadow(0 0 4px rgba(0,0,0,0.1));
-        }
-        .connection-line:hover {
-          stroke-opacity: 1;
-          filter: drop-shadow(0 0 6px rgba(0,0,0,0.2));
-        }
-      `}</style>
-      {/* Connection Controls - High z-index */}
-      <div className="fixed left-4 bottom-4 z-[100] pointer-events-auto">
+      {/* Connection Controls */}
+      <div className="fixed left-4 bottom-4 z-50 pointer-events-auto">
         {boardConnections.length > 0 && (
           <div className={`rounded-xl shadow-lg border backdrop-blur-xl overflow-hidden ${
             isDark 
@@ -447,15 +463,37 @@ export function Connections() {
         />
       )}
 
-      {/* Connect Button - High z-index */}
-      {selectedItems.length === 2 && (
-        <motion.button
-          initial={{ scale: 0.9, opacity: 0 }}
-          animate={{ scale: 1, opacity: 1 }}
-          className="fixed top-4 right-20 z-[100000] bg-blue-500 text-white px-3 py-2 rounded-lg 
-                   shadow-lg flex items-center gap-2 hover:bg-blue-600 transition-colors pointer-events-auto"
-          onClick={() => {
-            if (selectedItems.length === 2) {
+      {/* Connect/Disconnect Button - High z-index */}
+      {selectedItems.length === 2 && (() => {
+        const alreadyConnected = connections.find(
+          conn =>
+            (conn.fromId === selectedItems[0].id && conn.toId === selectedItems[1].id) ||
+            (conn.fromId === selectedItems[1].id && conn.toId === selectedItems[0].id)
+        )
+        return alreadyConnected ? (
+          <motion.button
+            key="disconnect"
+            initial={{ scale: 0.9, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            className="fixed top-4 right-20 z-[100000] bg-red-500 text-white px-3 py-2 rounded-lg 
+                     shadow-lg flex items-center gap-2 hover:bg-red-600 transition-colors pointer-events-auto"
+            onClick={() => {
+              removeConnection(alreadyConnected.id)
+              clearSelection()
+              toast.success('Items disconnected')
+            }}
+          >
+            <Link2 size={16} />
+            Disconnect Items
+          </motion.button>
+        ) : (
+          <motion.button
+            key="connect"
+            initial={{ scale: 0.9, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            className="fixed top-4 right-20 z-[100000] bg-blue-500 text-white px-3 py-2 rounded-lg 
+                     shadow-lg flex items-center gap-2 hover:bg-blue-600 transition-colors pointer-events-auto"
+            onClick={() => {
               // Validate both items exist in DOM
               const item1Exists = document.querySelector(`[data-node-id="${selectedItems[0].id}"]`)
               const item2Exists = document.querySelector(`[data-node-id="${selectedItems[1].id}"]`)
@@ -477,13 +515,13 @@ export function Connections() {
                 currentBoardId
               )
               toast.success('Items connected successfully')
-            }
-          }}
-        >
-          <Link2 size={16} />
-          Connect Items
-        </motion.button>
-      )}
+            }}
+          >
+            <Link2 size={16} />
+            Connect Items
+          </motion.button>
+        )
+      })()}
     </>
   )
 }

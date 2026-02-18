@@ -32,7 +32,11 @@ export function SideBar() {
     { id: 10, icon: Workflow, label: "Automations", description: "Custom triggers", comingSoon: true }
   ]
 
-  if (isPresentationMode) return null
+  if (isPresentationMode) {
+    // Reset hovered state when entering presentation mode so tooltips don't persist
+    if (hoveredItem !== null) setHoveredItem(null)
+    return null
+  }
 
   const handleItemClick = async (itemId: number) => {
     const item = toolItems.find(i => i.id === itemId)

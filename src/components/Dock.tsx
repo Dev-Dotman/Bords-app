@@ -10,6 +10,7 @@ import { useCommentStore } from '../store/commentStore';
 import { Comments } from './Comments';
 import { useConnectionStore } from '../store/connectionStore';
 import { usePresentationStore } from '../store/presentationStore'
+import { useBoardSyncStore } from '../store/boardSyncStore'
 import {
   GripHorizontal,
   Pencil,
@@ -20,7 +21,6 @@ import {
   Network,
   MessageSquare,
   Palette,
-  Share2,
   History,
   FolderTree,
   ListChecks,
@@ -31,6 +31,7 @@ import {
   X,
   Layout,
   Magnet,
+  Maximize,
 } from 'lucide-react'
 import { useTextStore } from '../store/textStore'
 import { useOrganizePanelStore } from '../store/organizePanelStore'
@@ -60,6 +61,7 @@ export function Dock() {
   const toggleBoardsPanel = useBoardStore((state) => state.toggleBoardsPanel)
   const { isDrawing, toggleDrawing, isErasing, toggleEraser } = useDrawingStore()
   const bringToFront = useZIndexStore((state) => state.bringToFront)
+  const { isSyncing, lastSyncedAt, syncBoardToCloud } = useBoardSyncStore()
 
   // Show modal when no board is selected
   useEffect(() => {
@@ -249,9 +251,15 @@ export function Dock() {
     },
     { id: 'separator-4', isSeparator: true },
     
-    // Coming Soon
-    { id: 5, icon: FileEdit, label: "Templates", description: "Coming soon!" },
-    { id: 10, icon: Share2, label: "Share", description: "Coming soon!" },
+    // View
+    // { 
+    //   id: 5, 
+    //   icon: Maximize, 
+    //   label: "Full Screen", 
+    //   description: !currentBoardId ? "Select/create a board first" : "Presentation view",
+    //   onClick: currentBoardId ? () => usePresentationStore.getState().setPresentationMode(true) : undefined,
+    //   disabled: !currentBoardId
+    // },
     { id: 11, icon: History, label: "History", description: "Coming soon!" },
   ]
 
@@ -412,6 +420,7 @@ export function Dock() {
           
         </div> */}
       </div>
+
     </>
   )
 }

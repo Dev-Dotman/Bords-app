@@ -12,6 +12,10 @@ import type { KanbanBoard as KanbanBoardType, KanbanTask } from '../types/kanban
 import { useZIndexStore } from '../store/zIndexStore'
 import { DeleteConfirmModal } from './DeleteConfirmModal'
 import { ColorPicker } from './ColorPicker'
+import { AssignButton } from './delegation/AssignButton'
+import { useDelegationStore } from '../store/delegationStore'
+import { useViewportScale } from '../hooks/useViewportScale'
+import { AddTaskModal } from './AddTaskModal'
 
 interface KanbanBoardProps {
   board: KanbanBoardType
@@ -51,9 +55,10 @@ export function KanbanBoard({ board }: KanbanBoardProps) {
 
   const width = board.width || 800
   const height = board.height || 350
+  const vScale = useViewportScale()
 
   const handleResizeStop = (_e: any, _dir: any, _ref: any, d: any) => {
-    updateBoardSize(board.id, width + d.width, height + d.height)
+    updateBoardSize(board.id, width + Math.round(d.width / vScale), height + Math.round(d.height / vScale))
   }
 
   const { selectItem, deselectItem, selectedItems, removeConnectionsByItemId } =
@@ -83,14 +88,9 @@ export function KanbanBoard({ board }: KanbanBoardProps) {
   const [showAddColumn, setShowAddColumn] = useState(false)
   const [newColumnTitle, setNewColumnTitle] = useState('')
   const [newTaskColumnId, setNewTaskColumnId] = useState<string | null>(null)
-  const [newTaskTitle, setNewTaskTitle] = useState('')
-  const [newTaskDescription, setNewTaskDescription] = useState('')
-  const [newTaskPriority, setNewTaskPriority] = useState<
-    'low' | 'medium' | 'high'
-  >('medium')
-  const [newTaskDueDate, setNewTaskDueDate] = useState('')
   const [showNodes, setShowNodes] = useState(false)
   const [showColorPicker, setShowColorPicker] = useState(false)
+  const colorBtnRef = useRef<HTMLButtonElement>(null)
   const [isEditingTitle, setIsEditingTitle] = useState(false)
   const [editTitle, setEditTitle] = useState(board.title)
   const [editingColumnId, setEditingColumnId] = useState<string | null>(null)
@@ -134,28 +134,21 @@ export function KanbanBoard({ board }: KanbanBoardProps) {
     setShowAddColumn(false)
   }
 
-  const handleAddTask = (columnId: string) => {
-    if (!newTaskTitle.trim()) return
-    const newTask: KanbanTask = {
-      id: Date.now().toString(),
-      title: newTaskTitle,
-      description: newTaskDescription || undefined,
-      priority: newTaskPriority,
-      dueDate: newTaskDueDate || undefined,
-    }
-    addTask(board.id, columnId, newTask)
-    setNewTaskTitle('')
-    setNewTaskDescription('')
-    setNewTaskPriority('medium')
-    setNewTaskDueDate('')
-    setNewTaskColumnId(null)
-  }
+  const handleAddTask = (columnId: string, task: KanbanTask, assignAfter: boolean) => {
+    addTask(board.id, columnId, task)
 
-  const resetNewTask = () => {
-    setNewTaskTitle('')
-    setNewTaskDescription('')
-    setNewTaskPriority('medium')
-    setNewTaskDueDate('')
+    if (assignAfter) {
+      const column = board.columns.find((c) => c.id === columnId)
+      useDelegationStore.getState().openAssignModal({
+        sourceType: 'kanban_task',
+        sourceId: task.id,
+        content: task.title,
+        columnId,
+        columnTitle: column?.title || columnId,
+        availableColumns: board.columns.map((c) => ({ id: c.id, title: c.title })),
+      })
+    }
+
     setNewTaskColumnId(null)
   }
 
@@ -171,6 +164,17 @@ export function KanbanBoard({ board }: KanbanBoardProps) {
       targetColumnId,
       index,
     )
+    // Sync column move to TaskAssignment if cross-column
+    if (draggedTask.columnId !== targetColumnId) {
+      const targetCol = board.columns.find((c) => c.id === targetColumnId)
+      if (targetCol) {
+        useDelegationStore.getState().syncOwnerColumnMove(
+          draggedTask.task.id,
+          targetColumnId,
+          targetCol.title,
+        )
+      }
+    }
     setDraggedTask(null)
   }
 
@@ -299,13 +303,24 @@ export function KanbanBoard({ board }: KanbanBoardProps) {
           dropTarget.columnId,
           dropTarget.index,
         )
+        // Sync column move to TaskAssignment if cross-column
+        if (drag.columnId !== dropTarget.columnId) {
+          const targetCol = board.columns.find((c) => c.id === dropTarget.columnId)
+          if (targetCol) {
+            useDelegationStore.getState().syncOwnerColumnMove(
+              drag.task.id,
+              dropTarget.columnId,
+              targetCol.title,
+            )
+          }
+        }
       }
 
       pointerDragRef.current = null
       setDraggedTask(null)
       setDropTarget(null)
     },
-    [board.id, dropTarget, moveTask],
+    [board.id, board.columns, dropTarget, moveTask],
   )
 
   const handleTaskPointerCancel = useCallback((e: React.PointerEvent) => {
@@ -388,10 +403,10 @@ export function KanbanBoard({ board }: KanbanBoardProps) {
         onMouseDown={() => bringToFront(board.id)}
       >
         <Resizable
-          size={{ width, height }}
+          size={{ width: width * vScale, height: height * vScale }}
           onResizeStop={handleResizeStop}
-          minWidth={600}
-          minHeight={450}
+          minWidth={600 * vScale}
+          minHeight={450 * vScale}
           enable={{
             top: false,
             right: !isDragging,
@@ -497,6 +512,7 @@ export function KanbanBoard({ board }: KanbanBoardProps) {
 
               <div className="flex items-center gap-1 shrink-0">
                 <button
+                  ref={colorBtnRef}
                   onClick={(e) => {
                     e.stopPropagation()
                     setShowColorPicker(!showColorPicker)
@@ -533,7 +549,7 @@ export function KanbanBoard({ board }: KanbanBoardProps) {
                   onSelect={(c) => updateBoardColor(board.id, c)}
                   onClose={() => setShowColorPicker(false)}
                   label="Board Color"
-                  position="top-full right-4 mt-2"
+                  triggerRef={colorBtnRef}
                 />
               )}
             </div>
@@ -565,7 +581,7 @@ export function KanbanBoard({ board }: KanbanBoardProps) {
                       ? 'bg-blue-50/80 ring-2 ring-blue-300/50'
                       : 'bg-zinc-50/80'
                   }`}
-                  style={{ width: '240px' }}
+                  style={{ width: `${Math.round(240 * vScale)}px` }}
                 >
                   {/* Column header */}
                   <div className="flex items-center justify-between p-3 pb-2 shrink-0">
@@ -799,7 +815,7 @@ export function KanbanBoard({ board }: KanbanBoardProps) {
                           <>
                             <div className="flex items-start justify-between gap-2">
                               <h5
-                                className="font-medium text-sm flex-1 cursor-pointer text-gray-800"
+                                className={`font-medium text-sm flex-1 cursor-pointer text-gray-800 ${task.completed ? 'line-through opacity-60' : ''}`}
                                 onDoubleClick={(e) => {
                                   e.stopPropagation()
                                   setEditingTaskData({
@@ -815,23 +831,37 @@ export function KanbanBoard({ board }: KanbanBoardProps) {
                               >
                                 {task.title}
                               </h5>
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  setTaskToDelete({
-                                    columnId: column.id,
-                                    taskId: task.id,
-                                    title: task.title,
-                                  })
-                                }}
-                                onMouseDown={(e) => e.stopPropagation()}
-                                className={`opacity-0 group-hover:opacity-100 p-1 rounded-lg transition-all hover:scale-105 hover:bg-red-50`}
+                              <div
+                                className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-all"
+                                onPointerDown={(e) => e.stopPropagation()}
                               >
-                                <X
+                                <AssignButton
+                                  sourceType="kanban_task"
+                                  sourceId={task.id}
+                                  content={task.title}
                                   size={14}
-                                  className="text-gray-400 hover:text-red-500 transition-colors"
+                                  columnId={column.id}
+                                  columnTitle={column.title}
+                                  availableColumns={board.columns.map((c) => ({ id: c.id, title: c.title }))}
                                 />
-                              </button>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    setTaskToDelete({
+                                      columnId: column.id,
+                                      taskId: task.id,
+                                      title: task.title,
+                                    })
+                                  }}
+                                  onMouseDown={(e) => e.stopPropagation()}
+                                  className={`p-1 rounded-lg transition-all hover:scale-105 hover:bg-red-50`}
+                                >
+                                  <X
+                                    size={14}
+                                    className="text-gray-400 hover:text-red-500 transition-colors"
+                                  />
+                                </button>
+                              </div>
                             </div>
                             {task.description && (
                               <p
@@ -903,104 +933,17 @@ export function KanbanBoard({ board }: KanbanBoardProps) {
 
                   {/* Add task — pinned at column bottom */}
                   <div className="p-3 pt-2 shrink-0">
-                    {newTaskColumnId === column.id ? (
-                      <div
-                        className="p-3 rounded-xl backdrop-blur-sm border shadow-lg space-y-2 bg-white/90 border-zinc-200/50"
-                      >
-                        <input
-                          type="text"
-                          placeholder="Task title"
-                          value={newTaskTitle}
-                          onChange={(e) => setNewTaskTitle(e.target.value)}
-                          className="w-full px-3 py-2 text-xs rounded-lg border shadow-sm focus:ring-2 focus:ring-blue-400/50 focus:outline-none transition-all bg-white border-zinc-200 text-gray-900 placeholder:text-gray-400"
-                          autoFocus
-                          onKeyDown={(e) => {
-                            e.stopPropagation()
-                            if (e.key === 'Enter' && newTaskTitle.trim())
-                              handleAddTask(column.id)
-                            if (e.key === 'Escape') resetNewTask()
-                          }}
-                        />
-                        <textarea
-                          placeholder="Description (optional)"
-                          value={newTaskDescription}
-                          onChange={(e) =>
-                            setNewTaskDescription(e.target.value)
-                          }
-                          className="w-full px-3 py-2 text-xs rounded-lg border shadow-sm focus:ring-2 focus:ring-blue-400/50 focus:outline-none resize-none transition-all bg-white border-zinc-200 text-gray-900 placeholder:text-gray-400"
-                          rows={2}
-                          onKeyDown={(e) => e.stopPropagation()}
-                        />
-                        {/* Priority pills */}
-                        <div className="flex gap-1">
-                          {(['low', 'medium', 'high'] as const).map((p) => (
-                            <button
-                              key={p}
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                setNewTaskPriority(p)
-                              }}
-                              onMouseDown={(e) => e.stopPropagation()}
-                              className={`flex-1 px-2 py-1.5 text-xs rounded-lg capitalize transition-colors font-medium ${
-                                newTaskPriority === p
-                                  ? `${priorityColors[p]} text-white`
-                                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                              }`}
-                            >
-                              {p}
-                            </button>
-                          ))}
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <Calendar
-                            size={14}
-                            className="text-gray-400 shrink-0"
-                          />
-                          <input
-                            type="date"
-                            value={newTaskDueDate}
-                            onChange={(e) => setNewTaskDueDate(e.target.value)}
-                            className="flex-1 px-3 py-1.5 text-xs rounded-lg border shadow-sm focus:ring-2 focus:ring-blue-400/50 focus:outline-none transition-all bg-white border-zinc-200 text-gray-900"
-                            onKeyDown={(e) => e.stopPropagation()}
-                          />
-                        </div>
-                        <div className="flex gap-2">
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              handleAddTask(column.id)
-                            }}
-                            onMouseDown={(e) => e.stopPropagation()}
-                            className="flex-1 px-3 py-2 text-xs font-semibold bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-lg hover:from-blue-600 hover:to-blue-700 shadow-md hover:shadow-lg transition-all active:scale-95"
-                          >
-                            Add Task
-                          </button>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              resetNewTask()
-                            }}
-                            onMouseDown={(e) => e.stopPropagation()}
-                            className="flex-1 px-3 py-2 text-xs font-medium rounded-lg transition-all active:scale-95 shadow-sm bg-white border border-zinc-200 text-gray-700 hover:bg-zinc-50"
-                          >
-                            Cancel
-                          </button>
-                        </div>
-                      </div>
-                    ) : (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          setNewTaskColumnId(column.id)
-                        }}
-                        onMouseDown={(e) => e.stopPropagation()}
-                        className="w-full p-2 rounded-xl border-2 border-dashed flex items-center justify-center gap-2 transition-all border-zinc-200 text-gray-400 hover:border-blue-300 hover:text-blue-500 hover:bg-blue-50/50"
-                      >
-                        <Plus size={16} />
-                        <span className="text-xs font-medium">Add task</span>
-                      </button>
-                    )}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setNewTaskColumnId(column.id)
+                      }}
+                      onMouseDown={(e) => e.stopPropagation()}
+                      className="w-full p-2 rounded-xl border-2 border-dashed flex items-center justify-center gap-2 transition-all border-zinc-200 text-gray-400 hover:border-blue-300 hover:text-blue-500 hover:bg-blue-50/50 active:bg-blue-50"
+                    >
+                      <Plus size={16} />
+                      <span className="text-xs font-medium">Add task</span>
+                    </button>
                   </div>
                 </div>
               ))}
@@ -1008,7 +951,7 @@ export function KanbanBoard({ board }: KanbanBoardProps) {
               {/* ═══════  ADD COLUMN — inline as last item  ═══════ */}
               <div
                 className="shrink-0 flex items-start"
-                style={{ width: '240px' }}
+                style={{ width: `${Math.round(240 * vScale)}px` }}
               >
                 {showAddColumn ? (
                   <div
@@ -1114,6 +1057,16 @@ export function KanbanBoard({ board }: KanbanBoardProps) {
         onCancel={() => setTaskToDelete(null)}
         itemName={taskToDelete?.title}
         itemType="task"
+      />
+
+      {/* Add Task Modal */}
+      <AddTaskModal
+        isOpen={!!newTaskColumnId}
+        columnTitle={board.columns.find((c) => c.id === newTaskColumnId)?.title || ''}
+        onAdd={(task, assignAfter) => {
+          if (newTaskColumnId) handleAddTask(newTaskColumnId, task, assignAfter)
+        }}
+        onClose={() => setNewTaskColumnId(null)}
       />
     </>
   )

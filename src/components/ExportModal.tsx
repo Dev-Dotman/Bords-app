@@ -210,8 +210,10 @@ export function ExportModal() {
         imagePlaceholder: 'data:image/svg+xml;charset=utf-8,<svg xmlns="http://www.w3.org/2000/svg" width="200" height="150"><rect fill="%23f0f0f0" width="200" height="150"/><text x="100" y="75" text-anchor="middle" fill="%23999" font-size="14">Image</text></svg>',
         filter: (node) => {
           if (node.tagName === 'IFRAME') return false
-          // Skip fixed UI overlays that shouldn't be in export
+          // Skip fixed UI overlays that shouldn't be in export, but keep connection lines
           const el = node as HTMLElement
+          if (el.hasAttribute?.('data-board-connections')) return true
+          if (el.closest?.('[data-board-connections]')) return true
           if (el.style?.position === 'fixed') return false
           if (el.classList?.contains('fixed')) return false
           return true
@@ -364,6 +366,8 @@ export function ExportModal() {
         filter: (node) => {
           if (node.tagName === 'IFRAME') return false
           const el = node as HTMLElement
+          if (el.hasAttribute?.('data-board-connections')) return true
+          if (el.closest?.('[data-board-connections]')) return true
           if (el.style?.position === 'fixed') return false
           if (el.classList?.contains('fixed')) return false
           return true
@@ -517,7 +521,7 @@ export function ExportModal() {
               ${isDark ? 'bg-blue-500/5 border-blue-500/20' : 'bg-blue-50 border-blue-200'}`}>
               <p className={`text-xs leading-relaxed
                 ${isDark ? 'text-blue-300' : 'text-blue-700'}`}>
-                <strong>Note:</strong> The export includes all board items (sticky notes, tasks, checklists, text) including those outside the visible viewport. UI elements (dock, sidebar, connections) are excluded.
+                <strong>Note:</strong> The export includes all board items (sticky notes, tasks, checklists, text, connections) including those outside the visible viewport. UI elements (dock, sidebar) are excluded.
               </p>
             </div>
           </div>

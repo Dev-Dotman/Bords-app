@@ -1,4 +1,5 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 
 export const boardColorOptions = [
   // Row 1 — warm
@@ -72,6 +73,8 @@ interface ColorPickerProps {
   useHex?: boolean
   /** Override with fully custom color options */
   colors?: ColorOption[]
+  /** Ref to the trigger button — enables portal mode so the picker escapes overflow/stacking contexts */
+  triggerRef?: React.RefObject<HTMLElement | null>
 }
 
 export function ColorPicker({
@@ -82,14 +85,25 @@ export function ColorPicker({
   position = 'top-full right-0 mt-2',
   useHex = false,
   colors,
+  triggerRef,
 }: ColorPickerProps) {
   const ref = useRef<HTMLDivElement>(null)
   const options = colors ?? (useHex ? hexColorOptions : boardColorOptions)
+  const [fixedPos, setFixedPos] = useState<{ top: number; right: number } | null>(null)
+  const usePortal = !!triggerRef
+
+  // Compute fixed position from trigger button
+  useEffect(() => {
+    if (!usePortal || !triggerRef?.current) return
+    const rect = triggerRef.current.getBoundingClientRect()
+    setFixedPos({ top: rect.bottom + 8, right: window.innerWidth - rect.right })
+  }, [usePortal, triggerRef])
 
   // Click-outside to close
   useEffect(() => {
     const handle = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
+      if (ref.current && !ref.current.contains(e.target as Node) &&
+          (!triggerRef?.current || !triggerRef.current.contains(e.target as Node))) {
         onClose()
       }
     }
@@ -98,12 +112,17 @@ export function ColorPicker({
       clearTimeout(timer)
       document.removeEventListener('mousedown', handle)
     }
-  }, [onClose])
+  }, [onClose, triggerRef])
 
-  return (
+  const pickerContent = (
     <div
       ref={ref}
-      className={`absolute ${position} bg-white/95 backdrop-blur-md rounded-2xl shadow-xl border border-black/10 p-3 z-[9999]`}
+      className={
+        usePortal
+          ? 'fixed bg-white/95 backdrop-blur-md rounded-2xl shadow-xl border border-black/10 p-3 z-[99999]'
+          : `absolute ${position} bg-white/95 backdrop-blur-md rounded-2xl shadow-xl border border-black/10 p-3 z-[9999]`
+      }
+      style={usePortal && fixedPos ? { top: fixedPos.top, right: fixedPos.right } : undefined}
       onClick={(e) => e.stopPropagation()}
       onMouseDown={(e) => e.stopPropagation()}
       onPointerDown={(e) => e.stopPropagation()}
@@ -132,4 +151,10 @@ export function ColorPicker({
       </div>
     </div>
   )
+
+  if (usePortal && fixedPos) {
+    return createPortal(pickerContent, document.body)
+  }
+
+  return pickerContent
 }

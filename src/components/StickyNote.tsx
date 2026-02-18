@@ -12,6 +12,8 @@ import { StickyNoteEditModal } from './StickyNoteEditModal'
 import { useZIndexStore } from '../store/zIndexStore'
 import { DeleteConfirmModal } from './DeleteConfirmModal'
 import { ColorPicker } from './ColorPicker'
+import { AssignButton } from './delegation/AssignButton'
+import { useViewportScale } from '../hooks/useViewportScale'
 
 interface StickyNoteProps extends StickyNoteType {}
 
@@ -22,6 +24,7 @@ export function StickyNote({ id, text, position, color, width = 192, height }: S
   const [showNodes, setShowNodes] = useState(false)
   const [showEditModal, setShowEditModal] = useState(false)
   const [showColorPicker, setShowColorPicker] = useState(false)
+  const colorBtnRef = useRef<HTMLButtonElement>(null)
   const [hasOverflow, setHasOverflow] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const textContainerRef = useRef<HTMLDivElement>(null)
@@ -34,6 +37,7 @@ export function StickyNote({ id, text, position, color, width = 192, height }: S
   const isConnected = connections.some(conn => conn.fromId === id || conn.toId === id)
   const { bringToFront, getZIndex } = useZIndexStore()
   const zIndex = useZIndexStore((state) => state.zIndexMap[id] || 1)
+  const vScale = useViewportScale()
 
   // Calculate minimum height based on text content
   const calculateMinHeight = () => {
@@ -73,8 +77,8 @@ export function StickyNote({ id, text, position, color, width = 192, height }: S
 
   const handleResizeStop = (e: any, direction: any, ref: any, d: any) => {
     updateNote(id, {
-      width: width + d.width,
-      height: noteHeight + d.height
+      width: width + Math.round(d.width / vScale),
+      height: noteHeight + Math.round(d.height / vScale)
     })
   }
 
@@ -132,10 +136,10 @@ export function StickyNote({ id, text, position, color, width = 192, height }: S
         onMouseDown={() => bringToFront(id)}
       >
         <Resizable
-          size={{ width, height: noteHeight }}
+          size={{ width: width * vScale, height: noteHeight * vScale }}
           onResizeStop={handleResizeStop}
-          minWidth={150}
-          minHeight={minHeight}
+          minWidth={150 * vScale}
+          minHeight={minHeight * vScale}
           enable={{
             top: false,
             right: !isDragging,
@@ -235,6 +239,7 @@ export function StickyNote({ id, text, position, color, width = 192, height }: S
             </button>
             <div className="w-px bg-gray-200" />
             <button
+              ref={colorBtnRef}
               onClick={(e) => {
                 e.stopPropagation()
                 setShowColorPicker(!showColorPicker)
@@ -244,6 +249,15 @@ export function StickyNote({ id, text, position, color, width = 192, height }: S
             >
               <Palette size={14} className="text-purple-600" />
             </button>
+            <div className="w-px bg-gray-200" />
+            <div className="w-px bg-gray-200" />
+            <AssignButton
+              sourceType="note"
+              sourceId={id}
+              content={text}
+              size={14}
+              className="p-2.5 hover:scale-110"
+            />
             <div className="w-px bg-gray-200" />
             <button
               onClick={() => setShowDeleteConfirm(true)}
@@ -261,7 +275,7 @@ export function StickyNote({ id, text, position, color, width = 192, height }: S
             currentColor={color}
             onSelect={(c) => updateNote(id, { color: c })}
             onClose={() => setShowColorPicker(false)}
-            position="-top-28 right-0"
+            triggerRef={colorBtnRef}
           />
         )}
         </div>

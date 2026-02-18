@@ -1,16 +1,57 @@
 import { useState, useEffect, useRef } from 'react'
-import { Moon, Sun, Share2, User, ChevronRight, Palette, Layout, LogOut, Minimize2, Maximize2 } from 'lucide-react'
+import { Moon, Sun, Share2, User, ChevronRight, Palette, Layout, LogOut, Minimize2, Maximize2, Building2, Cloud, CloudOff, Loader2, Trash2, Inbox } from 'lucide-react'
 import { useSession, signOut } from 'next-auth/react'
+import { useRouter } from 'next/navigation'
 import { useThemeStore, THEME_COLORS } from '../store/themeStore'
 import { useGridStore } from '../store/gridStore'
 import { create } from 'zustand'
 import { BoardsPanel } from './BoardsPanel'
 import { useBoardStore } from '../store/boardStore'
 import { usePresentationStore } from '../store/presentationStore'
+import { PublishButton } from './delegation/PublishButton'
+import { ActivitySidebar } from './delegation/ActivitySidebar'
+import { OrgManager } from './delegation/OrgManager'
+import { useBoardSyncStore } from '../store/boardSyncStore'
+import { ShareModal } from './BoardSyncControls'
 
-const profileItems = [
-  { id: 'visibility', icon: Share2, label: "Visibility", description: "Public/Private board" },
-]
+/** Small badge showing pending tasks assigned TO the current user (employee inbox) */
+function InboxBadge() {
+  const [pendingCount, setPendingCount] = useState(0)
+  const { data: session } = useSession()
+
+  useEffect(() => {
+    if (!session?.user) return
+    let cancelled = false
+
+    const fetchCount = async () => {
+      try {
+        const res = await fetch('/api/execution/tasks')
+        if (!res.ok || cancelled) return
+        const data = await res.json()
+        const groups = data.tasksByOrganization || []
+        const count = groups.reduce(
+          (sum: number, g: any) => sum + g.tasks.filter((t: any) => t.status === 'assigned').length,
+          0
+        )
+        if (!cancelled) setPendingCount(count)
+      } catch { /* silent */ }
+    }
+
+    fetchCount()
+    // Re-check every 60s
+    const interval = setInterval(fetchCount, 60_000)
+    return () => { cancelled = true; clearInterval(interval) }
+  }, [session?.user])
+
+  if (pendingCount === 0) return null
+  return (
+    <span className="absolute -top-1 -right-1 w-5 h-5 flex items-center justify-center rounded-full text-[10px] font-bold bg-blue-500 text-white ring-2 ring-white dark:ring-zinc-800">
+      {pendingCount > 9 ? '9+' : pendingCount}
+    </span>
+  )
+}
+
+const profileItems: any[] = []
 
 const GRID_COLORS = {
   gray: '#333333',
@@ -23,13 +64,17 @@ const GRID_COLORS = {
 
 export function TopBar() {
   const { data: session } = useSession()
+  const router = useRouter()
   const { isDark, toggleDark, colorTheme, setColorTheme } = useThemeStore()
   const [hoveredProfile, setHoveredProfile] = useState<string | null>(null)
   const [showColorPicker, setShowColorPicker] = useState(false)
   const [showUserMenu, setShowUserMenu] = useState(false)
+  const [showOrgManager, setShowOrgManager] = useState(false)
+  const [showShareModal, setShowShareModal] = useState(false)
   const [showBoardsTooltip, setShowBoardsTooltip] = useState(false)
   const [showThemeTooltip, setShowThemeTooltip] = useState(false)
   const [showPresentationTooltip, setShowPresentationTooltip] = useState(false)
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const setGridColor = useGridStore((state) => state.setGridColor)
   const gridColor = useGridStore((state) => state.gridColor)
   const [customGridColor, setCustomGridColor] = useState(gridColor)
@@ -37,8 +82,10 @@ export function TopBar() {
   const currentBoard = useBoardStore((state) => 
     state.boards.find(board => board.id === state.currentBoardId)
   )
-  const { isBoardsPanelOpen, toggleBoardsPanel, clearUserData } = useBoardStore()
+  const { isBoardsPanelOpen, toggleBoardsPanel, clearUserData, deleteBoard } = useBoardStore()
   const { isPresentationMode, togglePresentationMode } = usePresentationStore()
+  const { isSyncing, lastSyncedAt, dirtyBoards, syncBoardToCloud } = useBoardSyncStore()
+  const currentBoardId = useBoardStore(s => s.currentBoardId)
 
   const handleLogout = async () => {
     clearUserData() // Clear user-specific data before signing out
@@ -171,7 +218,10 @@ export function TopBar() {
               <div className={`w-px h-5 ${isDark ? 'bg-zinc-700/75' : 'bg-zinc-200/75'} mx-1`} />
 
               <button
-                onClick={toggleDark}
+                onClick={() => {
+                  setShowThemeTooltip(false)
+                  toggleDark()
+                }}
                 onMouseEnter={() => setShowThemeTooltip(true)}
                 onMouseLeave={() => setShowThemeTooltip(false)}
                 className={`relative p-1.5 rounded-lg transition-colors
@@ -191,7 +241,7 @@ export function TopBar() {
                 </div>
               </button>
 
-              {profileItems.map((item) => (
+              {profileItems.map((item: any) => (
                 <button
                   key={item.id}
                   className={`
@@ -217,6 +267,58 @@ export function TopBar() {
                   </div>
                 </button>
               ))}
+
+              {/* Cloud Sync Button */}
+              {currentBoardId && currentBoard && (
+                <button
+                  onClick={() => syncBoardToCloud(currentBoardId)}
+                  disabled={isSyncing}
+                  className={`relative p-1.5 rounded-lg transition-colors
+                    ${lastSyncedAt[currentBoardId]
+                      ? dirtyBoards.has(currentBoardId)
+                        ? 'text-amber-500 hover:text-amber-400'
+                        : 'text-green-500 hover:text-green-400'
+                      : isDark
+                        ? 'hover:bg-zinc-700/50 text-zinc-400 hover:text-zinc-200'
+                        : 'hover:bg-zinc-100 text-zinc-600 hover:text-zinc-900'}`}
+                  title={isSyncing
+                    ? 'Syncing...'
+                    : dirtyBoards.has(currentBoardId)
+                      ? 'Unsaved changes — Click to sync now'
+                      : lastSyncedAt[currentBoardId]
+                        ? `Synced ${new Date(lastSyncedAt[currentBoardId]).toLocaleString()} — Click to sync again`
+                        : 'Sync board to cloud'}
+                >
+                  {isSyncing ? (
+                    <Loader2 size={20} className="animate-spin" />
+                  ) : lastSyncedAt[currentBoardId] ? (
+                    <Cloud size={20} />
+                  ) : (
+                    <CloudOff size={20} />
+                  )}
+                  {/* Dirty indicator dot — pulsing amber when changes are pending */}
+                  {dirtyBoards.has(currentBoardId) && !isSyncing && (
+                    <span className="absolute -top-0.5 -right-0.5 flex h-2.5 w-2.5">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" />
+                      <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-500" />
+                    </span>
+                  )}
+                </button>
+              )}
+
+              {/* Share Button */}
+              {currentBoardId && currentBoard && (
+                <button
+                  onClick={() => setShowShareModal(true)}
+                  className={`relative p-1.5 rounded-lg transition-colors
+                    ${isDark
+                      ? 'hover:bg-zinc-700/50 text-zinc-400 hover:text-zinc-200'
+                      : 'hover:bg-zinc-100 text-zinc-600 hover:text-zinc-900'}`}
+                  title="Share board"
+                >
+                  <Share2 size={20} />
+                </button>
+              )}
             </>
           )}
 
@@ -224,7 +326,12 @@ export function TopBar() {
 
           {/* Presentation Mode Toggle */}
           <button
-            onClick={togglePresentationMode}
+            onClick={() => {
+              setShowPresentationTooltip(false)
+              setShowThemeTooltip(false)
+              setShowBoardsTooltip(false)
+              togglePresentationMode()
+            }}
             onMouseEnter={() => setShowPresentationTooltip(true)}
             onMouseLeave={() => setShowPresentationTooltip(false)}
             className={`relative p-1.5 rounded-lg transition-colors
@@ -234,31 +341,44 @@ export function TopBar() {
           >
             {isPresentationMode ? <Maximize2 size={20} /> : <Minimize2 size={20} />}
             {/* Tooltip */}
-            <div className={`
-              absolute top-full mt-2 left-1/2 -translate-x-1/2 whitespace-nowrap
-              ${isDark ? 'bg-zinc-700' : 'bg-zinc-800'} text-white px-3 py-1.5 rounded-lg
-              text-xs font-medium transition-all duration-200 pointer-events-none shadow-lg
-              ${showPresentationTooltip ? 'opacity-100 scale-100' : 'opacity-0 scale-95'}
-            `}>
-              {isPresentationMode ? 'Exit Presentation' : 'Presentation Mode'}
-            </div>
+            {!isPresentationMode && (
+              <div className={`
+                absolute top-full mt-2 left-1/2 -translate-x-1/2 whitespace-nowrap
+                ${isDark ? 'bg-zinc-700' : 'bg-zinc-800'} text-white px-3 py-1.5 rounded-lg
+                text-xs font-medium transition-all duration-200 pointer-events-none shadow-lg
+                ${showPresentationTooltip ? 'opacity-100 scale-100' : 'opacity-0 scale-95'}
+              `}>
+                Presentation Mode
+              </div>
+            )}
           </button>
         </div>
 
-        {/* Board name - inline on small screens */}
-        {!isPresentationMode && currentBoard && (
+        {/* Board name + delete - always inline next to controls */}
+        {currentBoard && (
           <div
-            className={`hidden max-[1200px]:flex items-center px-4 py-2 rounded-xl border shadow-lg backdrop-blur-xl
+            className={`flex items-center gap-1.5 px-3 py-2 rounded-xl border shadow-lg backdrop-blur-xl
               ${isDark
                 ? 'bg-zinc-800/70 border-zinc-700/50'
                 : 'bg-white/70 border-zinc-200/50'}`}
           >
             <h1
-              className={`text-sm font-semibold tracking-tight truncate max-w-[150px]
+              className={`text-sm font-semibold tracking-tight truncate max-w-[200px]
                 ${isDark ? 'text-white' : 'text-zinc-900'}`}
             >
               {currentBoard.name}
             </h1>
+            {!isPresentationMode && (
+              <button
+                onClick={() => setShowDeleteConfirm(true)}
+                className={`p-1 rounded-md transition-colors flex-shrink-0 ${
+                  isDark ? 'hover:bg-red-500/20 text-zinc-500 hover:text-red-400' : 'hover:bg-red-50 text-zinc-400 hover:text-red-500'
+                }`}
+                title="Delete board"
+              >
+                <Trash2 size={13} />
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -275,6 +395,34 @@ export function TopBar() {
       {!isPresentationMode && (
         <div className="fixed top-4 right-4 z-50">
         <div className="relative flex items-center gap-2">
+
+          {/* Delegation controls */}
+          <PublishButton />
+          <ActivitySidebar />
+          <button
+            onClick={() => router.push('/inbox')}
+            className={`relative p-2 rounded-lg shadow-lg backdrop-blur-sm border
+              ${isDark 
+                ? 'bg-zinc-800/90 border-zinc-700/50 text-zinc-400 hover:text-zinc-200' 
+                : 'bg-white/90 border-zinc-200/50 text-zinc-600 hover:text-zinc-900'}
+              transition-colors`}
+            title="Execution Inbox"
+          >
+            <Inbox size={20} />
+            <InboxBadge />
+          </button>
+          <button
+            onClick={() => setShowOrgManager(true)}
+            className={`p-2 rounded-lg shadow-lg backdrop-blur-sm border
+              ${isDark 
+                ? 'bg-zinc-800/90 border-zinc-700/50 text-zinc-400 hover:text-zinc-200' 
+                : 'bg-white/90 border-zinc-200/50 text-zinc-600 hover:text-zinc-900'}
+              transition-colors`}
+            title="Organization Manager"
+          >
+            <Building2 size={20} />
+          </button>
+
           <button
             onClick={() => setShowColorPicker(!showColorPicker)}
             className={`p-2 rounded-lg shadow-lg backdrop-blur-sm border
@@ -388,6 +536,63 @@ export function TopBar() {
           )}
         </div>
       </div>
+      )}
+
+      {/* Organization Manager Modal */}
+      <OrgManager isOpen={showOrgManager} onClose={() => setShowOrgManager(false)} />
+
+      {/* Share Modal */}
+      {showShareModal && currentBoardId && currentBoard && (
+        <ShareModal
+          localBoardId={currentBoardId}
+          boardName={currentBoard.name}
+          onClose={() => setShowShareModal(false)}
+        />
+      )}
+
+      {/* Delete Board Confirmation */}
+      {showDeleteConfirm && currentBoard && currentBoardId && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[60]" onClick={() => setShowDeleteConfirm(false)}>
+          <div
+            className={`p-6 rounded-2xl shadow-2xl max-w-md w-full mx-4 ${
+              isDark ? 'bg-zinc-800 border border-zinc-700' : 'bg-white'
+            }`}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start gap-4 mb-4">
+              <div className="p-3 rounded-full bg-red-100">
+                <Trash2 size={24} className="text-red-600" />
+              </div>
+              <div className="flex-1">
+                <h3 className={`text-lg font-semibold mb-2 ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                  Delete Board?
+                </h3>
+                <p className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
+                  This will permanently delete <span className="font-semibold">"{currentBoard.name}"</span> and all its items. This action cannot be undone.
+                </p>
+              </div>
+            </div>
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={() => setShowDeleteConfirm(false)}
+                className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                  isDark ? 'bg-zinc-700 hover:bg-zinc-600 text-white' : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
+                }`}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  deleteBoard(currentBoardId)
+                  setShowDeleteConfirm(false)
+                }}
+                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium transition-colors"
+              >
+                Delete Board
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </>
   )
