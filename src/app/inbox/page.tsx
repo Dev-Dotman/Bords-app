@@ -282,10 +282,10 @@ export default function ExecutionInbox() {
           <div className="text-center py-24 px-6">
             <Inbox size={44} className={`mx-auto mb-4 ${isDark ? 'text-zinc-700' : 'text-zinc-300'}`} />
             <h2 className={`text-lg sm:text-base font-semibold mb-1.5 ${isDark ? 'text-zinc-400' : 'text-zinc-600'}`}>
-              No tasks yet
+              No tasks or messages yet
             </h2>
             <p className={`text-sm ${isDark ? 'text-zinc-600' : 'text-zinc-400'}`}>
-              Tasks assigned to you will appear here
+              Your tasks will also appear here
             </p>
           </div>
         ) : (
