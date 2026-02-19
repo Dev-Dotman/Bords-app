@@ -330,13 +330,14 @@ function ReadOnlyConnections({ connections, items }: { connections: CloudConnect
 function ReadOnlyGrid({ gridColor, gridSize }: { gridColor: string; gridSize: number }) {
   return (
     <div
-      className="absolute inset-0 pointer-events-none"
+      className="fixed inset-0 pointer-events-none"
       style={{
+        height: '3000px',
         backgroundImage: `
-          linear-gradient(${gridColor}15 1px, transparent 1px),
-          linear-gradient(90deg, ${gridColor}15 1px, transparent 1px)
+          linear-gradient(to right, ${gridColor} 1px, transparent 1px),
+          linear-gradient(to bottom, ${gridColor} 1px, transparent 1px)
         `,
-        backgroundSize: `${gridSize}px ${gridSize}px`,
+        backgroundSize: `${gridSize * 2}px ${gridSize * 2}px`,
       }}
     />
   )
