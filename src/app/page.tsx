@@ -42,6 +42,7 @@ import { useDelegationStore } from "@/store/delegationStore";
 import { useOrganizationStore } from "@/store/organizationStore";
 import { useBoardSyncStore, gatherBoardDataForBeacon } from "@/store/boardSyncStore";
 import { useViewportScale } from "@/hooks/useViewportScale";
+import { PresentationDock } from "@/components/PresentationDock";
 
 // Fullscreen presentation mode is handled inline in the Home component
 // (no separate overlay component needed — avoids stacking context issues)
@@ -717,17 +718,21 @@ export default function Home() {
           className="fixed inset-0 pointer-events-none"
           style={{ zIndex: 50 }}
         >
-          {/* Connection Lines + Controls — hidden in presentation mode */}
-          {!isPresentationMode && (
+          {/* Connection Lines + Controls */}
           <div className="pointer-events-auto">
             {currentBoardId && <Connections key={currentBoardId} />}
           </div>
-          )}
 
           {/* Navigation Controls */}
           <div className="pointer-events-auto">
             {/* TopBar always visible — it self-collapses in presentation mode */}
             <TopBar />
+            {isPresentationMode && (
+              <>
+                <PresentationDock />
+                <ExportModal />
+              </>
+            )}
             {!isPresentationMode && (
               <>
                 <Dock />
