@@ -1,7 +1,9 @@
 import { useState, useEffect, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import { X, Calendar } from 'lucide-react'
 import type { KanbanTask } from '../types/kanban'
 import { useThemeStore } from '../store/themeStore'
+import { useWorkspaceStore } from '../store/workspaceStore'
 
 const priorityColors = {
   low: 'bg-blue-500',
@@ -18,6 +20,7 @@ interface AddTaskModalProps {
 
 export function AddTaskModal({ isOpen, columnTitle, onAdd, onClose }: AddTaskModalProps) {
   const isDark = useThemeStore((state) => state.isDark)
+  const isOrgContext = useWorkspaceStore((s) => s.isOrgContext())
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [priority, setPriority] = useState<'low' | 'medium' | 'high'>('medium')
@@ -53,7 +56,7 @@ export function AddTaskModal({ isOpen, columnTitle, onAdd, onClose }: AddTaskMod
     onClose()
   }
 
-  return (
+  return createPortal(
     <div
       className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 backdrop-blur-sm"
       onClick={onClose}
@@ -189,7 +192,7 @@ export function AddTaskModal({ isOpen, columnTitle, onAdd, onClose }: AddTaskMod
               <line x1="19" y1="8" x2="19" y2="14"/>
               <line x1="22" y1="11" x2="16" y2="11"/>
             </svg>
-            {assignOnCreate ? 'Will assign after create' : 'Assign to employee'}
+            {assignOnCreate ? 'Will assign after create' : isOrgContext ? 'Assign to employee' : 'Assign to friend'}
           </button>
         </div>
 
@@ -212,6 +215,7 @@ export function AddTaskModal({ isOpen, columnTitle, onAdd, onClose }: AddTaskMod
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   )
 }

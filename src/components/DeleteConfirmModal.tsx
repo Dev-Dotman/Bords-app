@@ -1,3 +1,4 @@
+import { createPortal } from 'react-dom'
 import { Trash2, X } from 'lucide-react'
 import { useThemeStore } from '../store/themeStore'
 
@@ -14,7 +15,7 @@ export function DeleteConfirmModal({ isOpen, onConfirm, onCancel, itemName, item
 
   if (!isOpen) return null
 
-  return (
+  return createPortal(
     <div
       className="fixed inset-0 bg-black/50 flex items-center justify-center z-[9999]"
       onClick={onCancel}
@@ -61,6 +62,7 @@ export function DeleteConfirmModal({ isOpen, onConfirm, onCancel, itemName, item
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   )
 }

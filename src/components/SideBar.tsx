@@ -9,26 +9,47 @@ import { useExportStore } from '../store/exportStore'
 import { useMediaStore } from '../store/mediaStore'
 import { useBoardStore } from '../store/boardStore'
 import { useConnectionLineStore } from '../store/connectionLineStore'
+import { useBoardSyncStore } from '../store/boardSyncStore'
+import { useOrganizationStore } from '../store/organizationStore'
+import { useDelegationStore } from '../store/delegationStore'
+import { useWorkspaceStore } from '../store/workspaceStore'
+import { BordAccessModal } from './workspace/BordAccessModal'
 
 export function SideBar() {
   const [hoveredItem, setHoveredItem] = useState<number | null>(null);
+  const [showAccessModal, setShowAccessModal] = useState(false)
+  const [isLinkingBord, setIsLinkingBord] = useState(false)
   const isDark = useThemeStore((state) => state.isDark)
   const { isPresentationMode, togglePresentationMode } = usePresentationStore()
   const { openExportModal } = useExportStore()
   const { openMediaModal } = useMediaStore()
   const { openBackgroundModal, currentBoardId } = useBoardStore()
+  const currentBoard = useBoardStore(s => s.boards.find(b => b.id === currentBoardId))
   const { openModal: openConnectionLineModal } = useConnectionLineStore()
+  const boardPermission = useBoardSyncStore((s) => s.boardPermissions[currentBoardId || ''] || 'owner')
+  const isViewOnly = boardPermission === 'view'
+  const activeContext = useWorkspaceStore(s => s.activeContext)
+  const isOrgContext = activeContext?.type === 'organization'
+  const isOwnerOfCurrentOrg = useOrganizationStore(s => s.isOwnerOfCurrentOrg)
+  const bords = useDelegationStore(s => s.bords)
+  const linkBoardToOrg = useDelegationStore(s => s.linkBoardToOrg)
+  const currentBord = isOrgContext && currentBoardId
+    ? bords.find(b => b.localBoardId === currentBoardId)
+    : null
+
+  // Show Collaborate only for org owners; hide entirely for regular members
+  const showCollaborate = isOrgContext && isOwnerOfCurrentOrg
 
   const toolItems = [
-    { id: 1, icon: Image, label: "Custom Backgrounds", description: !currentBoardId ? "Select/create a board to get started" : "Personalize your board", disabled: !currentBoardId },
+    { id: 1, icon: Image, label: "Custom Backgrounds", description: isViewOnly ? "View-only mode" : !currentBoardId ? "Select/create a board to get started" : "Personalize your board", disabled: !currentBoardId || isViewOnly },
     { id: 2, icon: Download, label: "Export Options", description: !currentBoardId ? "Select/create a board to get started" : "Save as PDF or image (Experimental)", disabled: !currentBoardId, experimental: true },
-    { id: 3, icon: Link2, label: "Media Links", description: !currentBoardId ? "Select/create a board to get started" : "Add images & videos", disabled: !currentBoardId },
+    { id: 3, icon: Link2, label: "Media Links", description: isViewOnly ? "View-only mode" : !currentBoardId ? "Select/create a board to get started" : "Add images & videos", disabled: !currentBoardId || isViewOnly },
     { id: 4, icon: Presentation, label: "Presentation Mode", description: !currentBoardId ? "Select/create a board to get started" : "Full-screen view", disabled: !currentBoardId },
-    { id: 5, icon: GitBranch, label: "Connection Lines", description: !currentBoardId ? "Select/create a board to get started" : "Customize line colors", disabled: !currentBoardId },
-    { id: 6, icon: Tags, label: "Tags", description: "Organize & filter", comingSoon: true },
-    { id: 7, icon: Users, label: "Collaborate", description: "Multi-user editing", comingSoon: true },
-    { id: 8, icon: Command, label: "Commands", description: "Quick actions", comingSoon: true },
-    { id: 9, icon: Brain, label: "AI Helper", description: "Smart suggestions", comingSoon: true },
+    { id: 5, icon: GitBranch, label: "Connection Lines", description: isViewOnly ? "View-only mode" : !currentBoardId ? "Select/create a board to get started" : "Customize line colors", disabled: !currentBoardId || isViewOnly },
+    // { id: 6, icon: Tags, label: "Tags", description: "Organize & filter", comingSoon: true },
+    ...(showCollaborate ? [{ id: 7, icon: Users, label: "Collaborate", description: !currentBoardId ? "Select/create a board to get started" : isLinkingBord ? "Setting up..." : "Manage team access", disabled: !currentBoardId || isLinkingBord }] : []),
+    // { id: 8, icon: Command, label: "Commands", description: "Quick actions", comingSoon: true },
+    // { id: 9, icon: Brain, label: "AI Helper", description: "Smart suggestions", comingSoon: true },
     { id: 10, icon: Workflow, label: "Automations", description: "Custom triggers", comingSoon: true }
   ]
 
@@ -62,11 +83,28 @@ export function SideBar() {
       togglePresentationMode()
     } else if (itemId === 5) { // Connection Lines
       openConnectionLineModal()
+    } else if (itemId === 7) { // Collaborate — open Bord Access Modal
+      if (currentBord) {
+        setShowAccessModal(true)
+        return
+      }
+      // No Bord record yet — create one on the fly
+      if (!currentBoardId || !currentBoard || !activeContext || activeContext.type !== 'organization') return
+      setIsLinkingBord(true)
+      try {
+        const bord = await linkBoardToOrg(activeContext.organizationId, currentBoardId, currentBoard.name)
+        if (bord) {
+          setShowAccessModal(true)
+        }
+      } finally {
+        setIsLinkingBord(false)
+      }
     }
     // Add other item handlers here as needed
   }
 
   return (
+    <>
     <div className="fixed right-4 top-1/2 -translate-y-1/2 z-40">
       <div className={`flex flex-col backdrop-blur-xl border shadow-lg rounded-2xl w-16
         ${isDark 
@@ -128,5 +166,20 @@ export function SideBar() {
         </div>
       </div>
     </div>
+
+      {/* Bord Access Modal — triggered by Collaborate button */}
+      {showAccessModal && (() => {
+        const bordId = currentBord?._id
+        if (!bordId) return null
+        return (
+          <BordAccessModal
+            bordId={bordId}
+            bordTitle={currentBoard?.name || 'Board'}
+            isOpen={showAccessModal}
+            onClose={() => setShowAccessModal(false)}
+          />
+        )
+      })()}
+    </>
   )
 }

@@ -17,6 +17,7 @@ import { useThemeStore } from '@/store/themeStore'
 import { useDelegationStore } from '@/store/delegationStore'
 import { useOrganizationStore } from '@/store/organizationStore'
 import { useBoardStore } from '@/store/boardStore'
+import { useWorkspaceStore } from '@/store/workspaceStore'
 import type { TaskPriority, BordDTO, TaskAssignmentDTO } from '@/types/delegation'
 
 const PRIORITY_OPTIONS: { value: TaskPriority; label: string; color: string; darkColor: string }[] = [
@@ -44,6 +45,10 @@ export function AssignTaskModal() {
     linkBoardToOrg,
     fetchBords,
     fetchAssignments,
+    createPersonalAssignment,
+    deletePersonalAssignment,
+    fetchPersonalAssignments,
+    getPersonalAssignmentsForSource,
   } = useDelegationStore()
   const {
     organizations,
@@ -52,6 +57,9 @@ export function AssignTaskModal() {
     fetchOrganizations,
     fetchEmployees,
   } = useOrganizationStore()
+  const isPersonal = useWorkspaceStore((s) => s.isPersonalContext())
+  const friends = useWorkspaceStore((s) => s.friends)
+  const fetchFriends = useWorkspaceStore((s) => s.fetchFriends)
   const currentBoardId = useBoardStore((s) => s.currentBoardId)
   const currentBoard = useBoardStore((s) =>
     s.boards.find((b) => b.id === s.currentBoardId)
@@ -67,15 +75,17 @@ export function AssignTaskModal() {
   const [error, setError] = useState('')
   const [showAddForm, setShowAddForm] = useState(false)
 
-  // Get existing assignments for this source
+  // Get existing assignments for this source (context-aware)
   const existingAssignments = assignModalContext
-    ? getAssignmentsForSource(assignModalContext.sourceType, assignModalContext.sourceId)
+    ? isPersonal
+      ? getPersonalAssignmentsForSource(assignModalContext.sourceType, assignModalContext.sourceId)
+      : getAssignmentsForSource(assignModalContext.sourceType, assignModalContext.sourceId)
     : []
   const activeAssignments = existingAssignments.filter((a) => a.status !== 'completed')
   const completedAssignments = existingAssignments.filter((a) => a.status === 'completed')
   const hasExisting = existingAssignments.length > 0
 
-  // Kanban tasks: single employee only
+  // Kanban tasks: single assignee only
   const isKanban = assignModalContext?.sourceType === 'kanban_task'
   const canAddMore = !isKanban // Only checklist items support multi-assign
 
@@ -85,13 +95,18 @@ export function AssignTaskModal() {
   const isPartiallyCompleted = totalAssigned > 1 && completedCount > 0 && completedCount < totalAssigned
   const isFullyCompleted = totalAssigned > 0 && completedCount === totalAssigned
 
-  // IDs of employees already assigned (active only)
+  // IDs of people already assigned (active only)
   const alreadyAssignedIds = activeAssignments.map((a) => a.assignedTo)
 
   useEffect(() => {
     if (isAssignModalOpen) {
-      fetchOrganizations()
-      fetchBords()
+      if (isPersonal) {
+        fetchFriends()
+        fetchPersonalAssignments()
+      } else {
+        fetchOrganizations()
+        fetchBords()
+      }
       setSelectedEmployee('')
       setPriority('normal')
       setDueDate('')
@@ -110,18 +125,19 @@ export function AssignTaskModal() {
 
   if (!isAssignModalOpen || !assignModalContext) return null
 
-  // Filter out already-assigned employees from the dropdown
-  const availableEmployees = employees.filter(
-    (emp) => !alreadyAssignedIds.includes(emp.userId)
-  )
+  // Build the people list based on context
+  const acceptedFriends = friends.filter((f) => f.status === 'accepted')
+  // Filter out already-assigned people from the dropdown
+  const availableEmployees = isPersonal
+    ? [] // not used in personal
+    : employees.filter((emp) => !alreadyAssignedIds.includes(emp.userId))
+  const availableFriends = isPersonal
+    ? acceptedFriends.filter((f) => !alreadyAssignedIds.includes(f.userId))
+    : []
 
   const handleAssign = async () => {
     if (!selectedEmployee) {
-      setError('Please select an employee')
-      return
-    }
-    if (!currentOrgId) {
-      setError('Please set up an organization first')
+      setError(isPersonal ? 'Please select a friend' : 'Please select a team member')
       return
     }
     if (!currentBoardId) {
@@ -133,44 +149,73 @@ export function AssignTaskModal() {
     setError('')
 
     try {
-      let bord: BordDTO | undefined = getBordForLocalBoard(currentBoardId) ?? undefined
-      if (!bord) {
-        const linked = await linkBoardToOrg(
-          currentOrgId,
-          currentBoardId,
-          currentBoard?.name || 'Untitled Board'
-        )
-        if (!linked) throw new Error('Failed to link board to organization')
-        bord = linked
-      }
-
-      const result = await createAssignment(bord._id, {
-        sourceType: assignModalContext.sourceType,
-        sourceId: assignModalContext.sourceId,
-        content: assignModalContext.content,
-        assignedTo: selectedEmployee,
-        priority,
-        dueDate: dueDate || undefined,
-        executionNote: executionNote || undefined,
-        columnId: assignModalContext.columnId,
-        columnTitle: assignModalContext.columnTitle,
-        availableColumns: assignModalContext.availableColumns,
-      })
-
-      if (result) {
-        // Reset the add form but keep modal open if there were existing assignments
-        setSelectedEmployee('')
-        setPriority('normal')
-        setDueDate('')
-        setExecutionNote('')
-        setShowAddForm(false)
-        setError('')
-        // If this was the only form (fresh assign), close the modal
-        if (!hasExisting) {
-          closeAssignModal()
+      if (isPersonal) {
+        // Personal friend assignment — no bord needed
+        const result = await createPersonalAssignment({
+          sourceType: assignModalContext.sourceType,
+          sourceId: assignModalContext.sourceId,
+          content: assignModalContext.content,
+          assignedTo: selectedEmployee,
+          priority,
+          dueDate: dueDate || undefined,
+          executionNote: executionNote || undefined,
+          columnId: assignModalContext.columnId,
+          columnTitle: assignModalContext.columnTitle,
+          availableColumns: assignModalContext.availableColumns,
+        })
+        if (result) {
+          setSelectedEmployee('')
+          setPriority('normal')
+          setDueDate('')
+          setExecutionNote('')
+          setShowAddForm(false)
+          setError('')
+          if (!hasExisting) closeAssignModal()
+        } else {
+          setError('Failed to create assignment')
         }
       } else {
-        setError('Failed to create assignment')
+        // Org team member assignment — needs bord
+        if (!currentOrgId) {
+          setError('Please set up an organization first')
+          setIsSubmitting(false)
+          return
+        }
+        let bord: BordDTO | undefined = getBordForLocalBoard(currentBoardId) ?? undefined
+        if (!bord) {
+          const linked = await linkBoardToOrg(
+            currentOrgId,
+            currentBoardId,
+            currentBoard?.name || 'Untitled Board'
+          )
+          if (!linked) throw new Error('Failed to link board to organization')
+          bord = linked
+        }
+
+        const result = await createAssignment(bord._id, {
+          sourceType: assignModalContext.sourceType,
+          sourceId: assignModalContext.sourceId,
+          content: assignModalContext.content,
+          assignedTo: selectedEmployee,
+          priority,
+          dueDate: dueDate || undefined,
+          executionNote: executionNote || undefined,
+          columnId: assignModalContext.columnId,
+          columnTitle: assignModalContext.columnTitle,
+          availableColumns: assignModalContext.availableColumns,
+        })
+
+        if (result) {
+          setSelectedEmployee('')
+          setPriority('normal')
+          setDueDate('')
+          setExecutionNote('')
+          setShowAddForm(false)
+          setError('')
+          if (!hasExisting) closeAssignModal()
+        } else {
+          setError('Failed to create assignment')
+        }
       }
     } catch (err: any) {
       setError(err.message || 'Something went wrong')
@@ -180,10 +225,14 @@ export function AssignTaskModal() {
   }
 
   const handleRemoveAssignment = async (assignment: TaskAssignmentDTO) => {
-    if (!assignment.bordId) return
     setRemovingId(assignment._id)
     try {
-      await deleteAssignment(assignment.bordId, assignment._id)
+      if (isPersonal) {
+        await deletePersonalAssignment(assignment._id)
+      } else {
+        if (!assignment.bordId) return
+        await deleteAssignment(assignment.bordId, assignment._id)
+      }
     } catch {
       // silent
     } finally {
@@ -191,11 +240,20 @@ export function AssignTaskModal() {
     }
   }
 
-  const selectedEmp = employees.find((e) => e.userId === selectedEmployee)
+  const selectedEmp = isPersonal
+    ? undefined
+    : employees.find((e) => e.userId === selectedEmployee)
+  const selectedFriend = isPersonal
+    ? acceptedFriends.find((f) => f.userId === selectedEmployee)
+    : undefined
 
-  // Helper to find employee info from assignment
+  // Helper to find assignee info from assignment
   const getAssigneeInfo = (assignment: TaskAssignmentDTO) => {
     if (assignment.assignee) return assignment.assignee
+    if (isPersonal) {
+      const friend = acceptedFriends.find((f) => f.userId === assignment.assignedTo)
+      if (friend) return { _id: friend.userId, email: friend.email, firstName: friend.firstName, lastName: friend.lastName, image: friend.image }
+    }
     const emp = employees.find((e) => e.userId === assignment.assignedTo)
     return emp?.user
   }
@@ -234,7 +292,7 @@ export function AssignTaskModal() {
                     : isFullyCompleted
                       ? `All ${totalAssigned} completed`
                       : `${activeAssignments.length} active${completedAssignments.length > 0 ? `, ${completedAssignments.length} completed` : ''}`
-                  : 'Draft — publishes on next deploy'}
+                  : isPersonal ? 'Assign to a friend' : 'Draft — publishes on next deploy (Assign to a team member)'}
               </p>
             </div>
           </div>
@@ -382,7 +440,7 @@ export function AssignTaskModal() {
                 })}
               </div>
 
-              {/* Add another employee button (only for checklist items) */}
+              {/* Add another person button (only for checklist items) */}
               {canAddMore && !showAddForm && (
                 <button
                   onClick={() => setShowAddForm(true)}
@@ -393,7 +451,7 @@ export function AssignTaskModal() {
                   }`}
                 >
                   <UserPlus size={16} />
-                  Assign to another employee
+                  {isPersonal ? 'Assign to another friend' : 'Assign to another team member'}
                 </button>
               )}
             </div>
@@ -420,81 +478,155 @@ export function AssignTaskModal() {
                 </div>
               )}
 
-              {/* Employee Selector */}
+              {/* Person Selector */}
               <div>
                 <label className={`block text-sm font-medium mb-1.5 ${
                   isDark ? 'text-zinc-300' : 'text-zinc-700'
                 }`}>
                   Assign to
                 </label>
-                {availableEmployees.length === 0 ? (
-                  <p className={`text-sm ${isDark ? 'text-zinc-500' : 'text-zinc-400'}`}>
-                    {employees.length === 0
-                      ? 'No employees yet. Invite employees from Organization settings.'
-                      : 'All employees are already assigned to this task.'}
-                  </p>
-                ) : (
-                  <div className="relative">
-                    <button
-                      type="button"
-                      onClick={() => setShowEmployeeDropdown(!showEmployeeDropdown)}
-                      className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg border text-sm transition-colors ${
-                        isDark
-                          ? 'bg-zinc-900 border-zinc-600 text-zinc-200 hover:border-zinc-500'
-                          : 'bg-white border-zinc-300 text-zinc-900 hover:border-zinc-400'
-                      }`}
-                    >
-                      {selectedEmp ? (
-                        <span>
-                          {selectedEmp.user?.firstName} {selectedEmp.user?.lastName}
-                          <span className={`ml-2 text-xs ${isDark ? 'text-zinc-500' : 'text-zinc-400'}`}>
-                            {selectedEmp.user?.email}
+                {isPersonal ? (
+                  /* ── Friend selector ── */
+                  availableFriends.length === 0 ? (
+                    <p className={`text-sm ${isDark ? 'text-zinc-500' : 'text-zinc-400'}`}>
+                      {acceptedFriends.length === 0
+                        ? 'No friends yet. Add friends from your personal workspace.'
+                        : 'All friends are already assigned to this task.'}
+                    </p>
+                  ) : (
+                    <div className="relative">
+                      <button
+                        type="button"
+                        onClick={() => setShowEmployeeDropdown(!showEmployeeDropdown)}
+                        className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg border text-sm transition-colors ${
+                          isDark
+                            ? 'bg-zinc-900 border-zinc-600 text-zinc-200 hover:border-zinc-500'
+                            : 'bg-white border-zinc-300 text-zinc-900 hover:border-zinc-400'
+                        }`}
+                      >
+                        {selectedFriend ? (
+                          <span>
+                            {selectedFriend.firstName} {selectedFriend.lastName}
+                            <span className={`ml-2 text-xs ${isDark ? 'text-zinc-500' : 'text-zinc-400'}`}>
+                              {selectedFriend.email}
+                            </span>
                           </span>
-                        </span>
-                      ) : (
-                        <span className={isDark ? 'text-zinc-500' : 'text-zinc-400'}>
-                          Select employee...
-                        </span>
-                      )}
-                      <ChevronDown size={16} />
-                    </button>
+                        ) : (
+                          <span className={isDark ? 'text-zinc-500' : 'text-zinc-400'}>
+                            Select friend...
+                          </span>
+                        )}
+                        <ChevronDown size={16} />
+                      </button>
 
-                    {showEmployeeDropdown && (
-                      <div className={`absolute top-full left-0 right-0 mt-1 rounded-lg border shadow-xl z-10 max-h-48 overflow-auto ${
-                        isDark ? 'bg-zinc-800 border-zinc-600' : 'bg-white border-zinc-200'
-                      }`}>
-                        {availableEmployees.map((emp) => (
-                          <button
-                            key={emp._id}
-                            type="button"
-                            onClick={() => {
-                              setSelectedEmployee(emp.userId)
-                              setShowEmployeeDropdown(false)
-                            }}
-                            className={`w-full text-left px-3 py-2.5 text-sm transition-colors flex items-center gap-3 ${
-                              selectedEmployee === emp.userId
-                                ? isDark ? 'bg-zinc-700' : 'bg-zinc-100'
-                                : isDark ? 'hover:bg-zinc-700/50' : 'hover:bg-zinc-50'
-                            }`}
-                          >
-                            <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-semibold ${
-                              isDark ? 'bg-zinc-600 text-white' : 'bg-zinc-200 text-zinc-700'
-                            }`}>
-                              {emp.user?.firstName?.charAt(0) || emp.user?.email?.charAt(0) || '?'}
-                            </div>
-                            <div>
-                              <p className={isDark ? 'text-zinc-200' : 'text-zinc-900'}>
-                                {emp.user?.firstName} {emp.user?.lastName}
-                              </p>
-                              <p className={`text-xs ${isDark ? 'text-zinc-500' : 'text-zinc-400'}`}>
-                                {emp.user?.email}
-                              </p>
-                            </div>
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
+                      {showEmployeeDropdown && (
+                        <div className={`absolute top-full left-0 right-0 mt-1 rounded-lg border shadow-xl z-10 max-h-48 overflow-auto ${
+                          isDark ? 'bg-zinc-800 border-zinc-600' : 'bg-white border-zinc-200'
+                        }`}>
+                          {availableFriends.map((friend) => (
+                            <button
+                              key={friend._id}
+                              type="button"
+                              onClick={() => {
+                                setSelectedEmployee(friend.userId)
+                                setShowEmployeeDropdown(false)
+                              }}
+                              className={`w-full text-left px-3 py-2.5 text-sm transition-colors flex items-center gap-3 ${
+                                selectedEmployee === friend.userId
+                                  ? isDark ? 'bg-zinc-700' : 'bg-zinc-100'
+                                  : isDark ? 'hover:bg-zinc-700/50' : 'hover:bg-zinc-50'
+                              }`}
+                            >
+                              <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-semibold ${
+                                isDark ? 'bg-zinc-600 text-white' : 'bg-zinc-200 text-zinc-700'
+                              }`}>
+                                {friend.firstName?.charAt(0) || friend.email?.charAt(0) || '?'}
+                              </div>
+                              <div>
+                                <p className={isDark ? 'text-zinc-200' : 'text-zinc-900'}>
+                                  {friend.nickname || `${friend.firstName} ${friend.lastName}`}
+                                </p>
+                                <p className={`text-xs ${isDark ? 'text-zinc-500' : 'text-zinc-400'}`}>
+                                  {friend.email}
+                                </p>
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )
+                ) : (
+                  /* ── Employee selector (org context) ── */
+                  availableEmployees.length === 0 ? (
+                    <p className={`text-sm ${isDark ? 'text-zinc-500' : 'text-zinc-400'}`}>
+                      {employees.length === 0
+                        ? 'No team members yet. Invite members from Organization settings.'
+                        : 'All team members are already assigned to this task.'}
+                    </p>
+                  ) : (
+                    <div className="relative">
+                      <button
+                        type="button"
+                        onClick={() => setShowEmployeeDropdown(!showEmployeeDropdown)}
+                        className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg border text-sm transition-colors ${
+                          isDark
+                            ? 'bg-zinc-900 border-zinc-600 text-zinc-200 hover:border-zinc-500'
+                            : 'bg-white border-zinc-300 text-zinc-900 hover:border-zinc-400'
+                        }`}
+                      >
+                        {selectedEmp ? (
+                          <span>
+                            {selectedEmp.user?.firstName} {selectedEmp.user?.lastName}
+                            <span className={`ml-2 text-xs ${isDark ? 'text-zinc-500' : 'text-zinc-400'}`}>
+                              {selectedEmp.user?.email}
+                            </span>
+                          </span>
+                        ) : (
+                          <span className={isDark ? 'text-zinc-500' : 'text-zinc-400'}>
+                            Select team member...
+                          </span>
+                        )}
+                        <ChevronDown size={16} />
+                      </button>
+
+                      {showEmployeeDropdown && (
+                        <div className={`absolute top-full left-0 right-0 mt-1 rounded-lg border shadow-xl z-10 max-h-48 overflow-auto ${
+                          isDark ? 'bg-zinc-800 border-zinc-600' : 'bg-white border-zinc-200'
+                        }`}>
+                          {availableEmployees.map((emp) => (
+                            <button
+                              key={emp._id}
+                              type="button"
+                              onClick={() => {
+                                setSelectedEmployee(emp.userId)
+                                setShowEmployeeDropdown(false)
+                              }}
+                              className={`w-full text-left px-3 py-2.5 text-sm transition-colors flex items-center gap-3 ${
+                                selectedEmployee === emp.userId
+                                  ? isDark ? 'bg-zinc-700' : 'bg-zinc-100'
+                                  : isDark ? 'hover:bg-zinc-700/50' : 'hover:bg-zinc-50'
+                              }`}
+                            >
+                              <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-semibold ${
+                                isDark ? 'bg-zinc-600 text-white' : 'bg-zinc-200 text-zinc-700'
+                              }`}>
+                                {emp.user?.firstName?.charAt(0) || emp.user?.email?.charAt(0) || '?'}
+                              </div>
+                              <div>
+                                <p className={isDark ? 'text-zinc-200' : 'text-zinc-900'}>
+                                  {emp.user?.firstName} {emp.user?.lastName}
+                                </p>
+                                <p className={`text-xs ${isDark ? 'text-zinc-500' : 'text-zinc-400'}`}>
+                                  {emp.user?.email}
+                                </p>
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )
                 )}
               </div>
 
@@ -556,7 +688,7 @@ export function AssignTaskModal() {
                 <textarea
                   value={executionNote}
                   onChange={(e) => setExecutionNote(e.target.value)}
-                  placeholder="Add context or instructions for the employee..."
+                  placeholder={isPersonal ? 'Add context or instructions for your friend...' : 'Add context or instructions for the team member...'}
                   rows={2}
                   className={`w-full px-3 py-2.5 rounded-lg border text-sm resize-none transition-colors ${
                     isDark
@@ -585,7 +717,7 @@ export function AssignTaskModal() {
           >
             {hasExisting && !showAddForm ? 'Done' : 'Cancel'}
           </button>
-          {showForm && availableEmployees.length > 0 && (
+          {showForm && (isPersonal ? availableFriends.length > 0 : availableEmployees.length > 0) && (
             <button
               onClick={handleAssign}
               disabled={isSubmitting || !selectedEmployee}
@@ -595,7 +727,7 @@ export function AssignTaskModal() {
                   : 'bg-black text-white hover:bg-zinc-800 dark:bg-white dark:text-black dark:hover:bg-zinc-200'
               }`}
             >
-              {isSubmitting ? 'Assigning...' : hasExisting ? 'Add Assignee' : 'Assign (Draft)'}
+              {isSubmitting ? 'Assigning...' : hasExisting ? 'Add Assignee' : isPersonal ? 'Assign' : 'Assign (Draft)'}
             </button>
           )}
         </div>

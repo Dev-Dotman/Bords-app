@@ -22,7 +22,6 @@ import {
   Network,
   MessageSquare,
   Palette,
-  History,
   FolderTree,
   ListChecks,
   Calculator,
@@ -33,12 +32,17 @@ import {
   Layout,
   Magnet,
   Maximize,
+  Bell,
+  ZoomIn,
+  ZoomOut,
 } from 'lucide-react'
 import { useTextStore } from '../store/textStore'
 import { useOrganizePanelStore } from '../store/organizePanelStore'
 import { useDrawingStore } from '../store/drawingStore'
 import { KanbanForm } from './KanbanForm'
+import { ReminderForm } from './ReminderForm'
 import { useZIndexStore } from '../store/zIndexStore'
+import { scheduleConnectionUpdate } from './Connections'
 
 export function Dock() {
   const [hoveredItem, setHoveredItem] = useState<string | number | null>(null);
@@ -48,6 +52,7 @@ export function Dock() {
   const [showNoteForm, setShowNoteForm] = useState(false)
   const [showChecklistForm, setShowChecklistForm] = useState(false)
   const [showKanbanForm, setShowKanbanForm] = useState(false)
+  const [showReminderForm, setShowReminderForm] = useState(false)
   const { addNote } = useNoteStore()
   const { isDragEnabled, toggleDragMode } = useDragModeStore()
   const [commentPosition, setCommentPosition] = useState<{ x: number; y: number } | null>(null);
@@ -64,6 +69,26 @@ export function Dock() {
   const { isDrawing, toggleDrawing, isErasing, toggleEraser } = useDrawingStore()
   const bringToFront = useZIndexStore((state) => state.bringToFront)
   const { isSyncing, lastSyncedAt, syncBoardToCloud } = useBoardSyncStore()
+  const boardPermission = useBoardSyncStore((s) => s.boardPermissions[currentBoardId || ''] || 'owner')
+  const isViewOnly = boardPermission === 'view'
+  const zoom = useGridStore((state) => state.zoom)
+  const setZoom = useGridStore((state) => state.setZoom)
+  const isMac = typeof navigator !== 'undefined' && /Mac|iPod|iPhone|iPad/.test(navigator.userAgent)
+
+  const handleZoomIn = () => {
+    const newZoom = Math.min(2, Math.round((zoom + 0.1) * 100) / 100)
+    setZoom(newZoom)
+    scheduleConnectionUpdate()
+  }
+  const handleZoomOut = () => {
+    const newZoom = Math.max(0.25, Math.round((zoom - 0.1) * 100) / 100)
+    setZoom(newZoom)
+    scheduleConnectionUpdate()
+  }
+  const handleZoomReset = () => {
+    setZoom(1)
+    scheduleConnectionUpdate()
+  }
 
   // Show modal when no board is selected
   useEffect(() => {
@@ -131,7 +156,8 @@ export function Dock() {
         y: Math.max(100, Math.min(window.innerHeight - 100, window.innerHeight / 2 - 50))
       },
       fontSize: 16,
-      color: isDark ? '#fff' : '#000'
+      color: isDark ? '#fff' : '#000',
+      width: 200
     })
     bringToFront(textId)
     
@@ -147,10 +173,11 @@ export function Dock() {
       id: 1, 
       icon: GripHorizontal, 
       label: "Drag Mode", 
-      description: isDragEnabled ? "Click to disable drag" : "Click to enable drag",
-      onClick: toggleDragMode,
+      description: isViewOnly ? "View-only mode" : isDragEnabled ? "Click to disable drag" : "Click to enable drag",
+      onClick: isViewOnly ? undefined : toggleDragMode,
       isActive: isDragEnabled,
-      customStyle: isDragEnabled 
+      disabled: isViewOnly,
+      customStyle: isViewOnly ? undefined : isDragEnabled 
         ? 'text-green-500 hover:text-green-600' 
         : 'text-red-500 hover:text-red-600'
     },
@@ -180,33 +207,41 @@ export function Dock() {
       id: 3, 
       icon: StickyNote, 
       label: "Sticky Note", 
-      description: !currentBoardId ? "Select/create a board to get started" : "Add quick notes",
-      onClick: currentBoardId ? () => setShowNoteForm(true) : undefined,
-      disabled: !currentBoardId
+      description: isViewOnly ? "View-only mode" : !currentBoardId ? "Select/create a board to get started" : "Add quick notes",
+      onClick: currentBoardId && !isViewOnly ? () => setShowNoteForm(true) : undefined,
+      disabled: !currentBoardId || isViewOnly
     },
     { 
       id: 7, 
       icon: Type, 
       label: "Add Text", 
-      description: !currentBoardId ? "Select/create a board to get started" : "Add text anywhere",
-      onClick: currentBoardId ? handleAddText : undefined,
-      disabled: !currentBoardId
+      description: isViewOnly ? "View-only mode" : !currentBoardId ? "Select/create a board to get started" : "Add text anywhere",
+      onClick: currentBoardId && !isViewOnly ? handleAddText : undefined,
+      disabled: !currentBoardId || isViewOnly
     },
     { 
       id: 13, 
       icon: ListChecks, 
       label: "Checklist", 
-      description: !currentBoardId ? "Select/create a board to get started" : "Track progress",
-      onClick: currentBoardId ? () => setShowChecklistForm(true) : undefined,
-      disabled: !currentBoardId
+      description: isViewOnly ? "View-only mode" : !currentBoardId ? "Select/create a board to get started" : "Track progress",
+      onClick: currentBoardId && !isViewOnly ? () => setShowChecklistForm(true) : undefined,
+      disabled: !currentBoardId || isViewOnly
     },
     { 
       id: 6, 
       icon: Kanban, 
       label: "Kanban", 
-      description: !currentBoardId ? "Select/create a board to get started" : "Create kanban board",
-      onClick: currentBoardId ? () => setShowKanbanForm(true) : undefined,
-      disabled: !currentBoardId
+      description: isViewOnly ? "View-only mode" : !currentBoardId ? "Select/create a board to get started" : "Create kanban board",
+      onClick: currentBoardId && !isViewOnly ? () => setShowKanbanForm(true) : undefined,
+      disabled: !currentBoardId || isViewOnly
+    },
+    { 
+      id: 15, 
+      icon: Bell, 
+      label: "Reminder", 
+      description: isViewOnly ? "View-only mode" : !currentBoardId ? "Select/create a board to get started" : "Create a reminder",
+      onClick: currentBoardId && !isViewOnly ? () => setShowReminderForm(true) : undefined,
+      disabled: !currentBoardId || isViewOnly
     },
     { id: 'separator-2', isSeparator: true },
     
@@ -215,20 +250,20 @@ export function Dock() {
       id: 2, 
       icon: Pencil, 
       label: "Draw", 
-      description: !currentBoardId ? "Select/create a board to get started" : (isDrawing ? "Drawing mode active" : "Click to draw"),
-      onClick: currentBoardId ? toggleDrawing : undefined,
+      description: isViewOnly ? "View-only mode" : !currentBoardId ? "Select/create a board to get started" : (isDrawing ? "Drawing mode active" : "Click to draw"),
+      onClick: currentBoardId && !isViewOnly ? toggleDrawing : undefined,
       isActive: isDrawing,
-      disabled: !currentBoardId,
+      disabled: !currentBoardId || isViewOnly,
       customStyle: isDrawing ? 'text-blue-500 hover:text-blue-600' : undefined
     },
     { 
       id: 14, 
       icon: Eraser, 
       label: "Eraser", 
-      description: !currentBoardId ? "Select/create a board to get started" : (isErasing ? "Erasing mode active" : "Click to erase drawings"),
-      onClick: currentBoardId ? toggleEraser : undefined,
+      description: isViewOnly ? "View-only mode" : !currentBoardId ? "Select/create a board to get started" : (isErasing ? "Erasing mode active" : "Click to erase drawings"),
+      onClick: currentBoardId && !isViewOnly ? toggleEraser : undefined,
       isActive: isErasing,
-      disabled: !currentBoardId,
+      disabled: !currentBoardId || isViewOnly,
       customStyle: isErasing ? 'text-orange-500 hover:text-orange-600' : undefined
     },
     { id: 'separator-3', isSeparator: true },
@@ -238,10 +273,10 @@ export function Dock() {
       id: 8, 
       icon: MessageSquare, 
       label: `Comments (${comments.length})`, 
-      description: !currentBoardId ? "Select/create a board to get started" : `${comments.length} comment${comments.length !== 1 ? 's' : ''} added`,
-      onClick: currentBoardId ? handleCommentClick : undefined,
+      description: isViewOnly ? "View-only mode" : !currentBoardId ? "Select/create a board to get started" : `${comments.length} comment${comments.length !== 1 ? 's' : ''} added`,
+      onClick: currentBoardId && !isViewOnly ? handleCommentClick : undefined,
       isActive: isCommenting,
-      disabled: !currentBoardId,
+      disabled: !currentBoardId || isViewOnly,
       customStyle: isCommenting ? 'text-purple-500 hover:text-purple-600' : undefined
     },
     { 
@@ -253,16 +288,30 @@ export function Dock() {
     },
     { id: 'separator-4', isSeparator: true },
     
-    // View
-    // { 
-    //   id: 5, 
-    //   icon: Maximize, 
-    //   label: "Full Screen", 
-    //   description: !currentBoardId ? "Select/create a board first" : "Scale board to fit screen",
-    //   onClick: currentBoardId ? () => useFullScreenStore.getState().setFullScreen(true) : undefined,
-    //   disabled: !currentBoardId
-    // },
-    { id: 11, icon: History, label: "History", description: "Coming soon!" },
+    // View / Zoom
+    { 
+      id: 16, 
+      icon: ZoomOut, 
+      label: "Zoom Out", 
+      description: `${Math.round(zoom * 100)}% — ${isMac ? '⌘' : 'Ctrl'} + scroll down`,
+      onClick: handleZoomOut,
+      disabled: zoom <= 0.25
+    },
+    { 
+      id: 18,
+      label: `${Math.round(zoom * 100)}%`,
+      description: "Click to reset to 100%",
+      onClick: handleZoomReset,
+      customContent: true,
+    },
+    { 
+      id: 17, 
+      icon: ZoomIn, 
+      label: "Zoom In", 
+      description: `${Math.round(zoom * 100)}% — ${isMac ? '⌘' : 'Ctrl'} + scroll up`,
+      onClick: handleZoomIn,
+      disabled: zoom >= 2
+    },
   ]
 
   return (
@@ -281,6 +330,37 @@ export function Dock() {
                 key={item.id}
                 className={`w-px h-6 ${isDark ? 'bg-zinc-700/50' : 'bg-zinc-300/50'} mx-1`}
               />
+            ) : item.customContent ? (
+              <button
+                key={item.id}
+                onClick={item.onClick}
+                className={`
+                  flex flex-col items-center transition-all duration-200 px-0.5
+                  ${hoveredItem === item.id ? 'scale-110 -translate-y-1' : 'hover:scale-105'}
+                  group relative cursor-pointer
+                `}
+                onPointerEnter={(e) => { if (e.pointerType !== 'touch') setHoveredItem(item.id) }}
+                onPointerLeave={(e) => { if (e.pointerType !== 'touch') setHoveredItem(null) }}
+                onTouchEnd={() => setHoveredItem(null)}
+              >
+                <span className={`text-[10px] font-semibold tabular-nums leading-5 ${
+                  isDark ? 'text-zinc-400 group-hover:text-zinc-200' : 'text-zinc-500 group-hover:text-zinc-900'
+                }`}>
+                  {item.label}
+                </span>
+                <div className={`
+                  absolute -top-12 whitespace-nowrap
+                  bg-zinc-800 text-white px-2 py-1 rounded-md
+                  text-xs transform -translate-x-1/2 left-1/2
+                  transition-all duration-200 pointer-events-none
+                  ${hoveredItem === item.id ? 'opacity-100 scale-100' : 'opacity-0 scale-95'}
+                `}>
+                  <div className="font-medium">{item.label}</div>
+                  <div className="text-zinc-400 text-[10px]">{item.description}</div>
+                  <div className="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-1/2 
+                       border-4 border-transparent border-t-zinc-800"></div>
+                </div>
+              </button>
             ) : (
               <button
                 key={item.id}
@@ -349,6 +429,16 @@ export function Dock() {
           position={{
             x: Math.max(100, Math.min(window.innerWidth - 400, window.innerWidth / 2 - 400)),
             y: Math.max(100, Math.min(window.innerHeight - 300, window.innerHeight / 2 - 200))
+          }}
+        />
+      )}
+
+      {showReminderForm && (
+        <ReminderForm
+          onClose={() => setShowReminderForm(false)}
+          position={{
+            x: Math.max(100, Math.min(window.innerWidth - 300, window.innerWidth / 2 - 140)),
+            y: Math.max(100, Math.min(window.innerHeight - 300, window.innerHeight / 2 - 160))
           }}
         />
       )}

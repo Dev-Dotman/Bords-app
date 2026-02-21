@@ -16,8 +16,8 @@ export interface Connection {
   id: string
   fromId: string
   toId: string
-  fromType: 'note' | 'checklist' | 'kanban' | 'text' | 'media'
-  toType: 'note' | 'checklist' | 'kanban' | 'text' | 'media'
+  fromType: 'note' | 'checklist' | 'kanban' | 'text' | 'media' | 'reminder'
+  toType: 'note' | 'checklist' | 'kanban' | 'text' | 'media' | 'reminder'
   fromPosition?: { x: number; y: number }
   toPosition?: { x: number; y: number }
   color: string
@@ -26,7 +26,7 @@ export interface Connection {
 
 interface DraggedNode {
   id: string
-  type: 'note' | 'checklist' | 'kanban' | 'text' | 'media'
+  type: 'note' | 'checklist' | 'kanban' | 'text' | 'media' | 'reminder'
   side: 'left' | 'right'
   position: { x: number; y: number }
   sourceNodeRef: HTMLElement | null
@@ -36,14 +36,14 @@ interface DraggedNode {
 interface ConnectionStore {
   selectedItems: {
     id: string
-    type: 'note' | 'checklist' | 'kanban' | 'text' | 'media'
+    type: 'note' | 'checklist' | 'kanban' | 'text' | 'media' | 'reminder'
     position: { x: number; y: number }
   }[]
   connections: Connection[]
-  selectItem: (id: string, type: 'note' | 'checklist' | 'kanban' | 'text' | 'media', position: { x: number; y: number }) => void
+  selectItem: (id: string, type: 'note' | 'checklist' | 'kanban' | 'text' | 'media' | 'reminder', position: { x: number; y: number }) => void
   deselectItem: (id: string) => void
   clearSelection: () => void
-  addConnection: (fromId: string, toId: string, fromType: 'note' | 'checklist' | 'kanban' | 'text' | 'media', toType: 'note' | 'checklist' | 'kanban' | 'text' | 'media', positions: { from: { x: number; y: number }, to: { x: number; y: number } }, boardId: string) => void
+  addConnection: (fromId: string, toId: string, fromType: 'note' | 'checklist' | 'kanban' | 'text' | 'media' | 'reminder', toType: 'note' | 'checklist' | 'kanban' | 'text' | 'media' | 'reminder', positions: { from: { x: number; y: number }, to: { x: number; y: number } }, boardId: string) => void
   removeConnection: (id: string) => void
   removeConnectionsByItemId: (itemId: string) => void
   clearAllConnections: () => void

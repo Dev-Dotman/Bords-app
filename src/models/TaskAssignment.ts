@@ -2,8 +2,11 @@ import mongoose, { Schema, Model, Types } from 'mongoose'
 
 export interface ITaskAssignment {
   _id: string
-  bordId: Types.ObjectId
-  sourceType: 'note' | 'checklist_item' | 'kanban_task'
+  bordId: Types.ObjectId | null  // null for personal tasks without a Bord link
+  workspaceId?: Types.ObjectId
+  organizationId?: Types.ObjectId // non-null only for org tasks
+  contextType: 'personal' | 'organization'
+  sourceType: 'note' | 'checklist_item' | 'kanban_task' | 'reminder_item'
   sourceId: string
   content: string
   assignedTo: Types.ObjectId
@@ -35,12 +38,30 @@ const TaskAssignmentSchema = new Schema<ITaskAssignment>(
     bordId: {
       type: Schema.Types.ObjectId,
       ref: 'Bord',
-      required: true,
+      default: null,
+      index: true,
+    },
+    workspaceId: {
+      type: Schema.Types.ObjectId,
+      ref: 'Workspace',
+      default: null,
+      index: true,
+    },
+    organizationId: {
+      type: Schema.Types.ObjectId,
+      ref: 'Organization',
+      default: null,
+      index: true,
+    },
+    contextType: {
+      type: String,
+      enum: ['personal', 'organization'],
+      default: 'organization',
       index: true,
     },
     sourceType: {
       type: String,
-      enum: ['note', 'checklist_item', 'kanban_task'],
+      enum: ['note', 'checklist_item', 'kanban_task', 'reminder_item'],
       required: true,
     },
     sourceId: {
@@ -126,6 +147,8 @@ const TaskAssignmentSchema = new Schema<ITaskAssignment>(
 TaskAssignmentSchema.index({ bordId: 1, status: 1 })
 TaskAssignmentSchema.index({ assignedTo: 1, status: 1 })
 TaskAssignmentSchema.index({ bordId: 1, sourceType: 1, sourceId: 1 })
+TaskAssignmentSchema.index({ contextType: 1, assignedTo: 1, status: 1 })
+TaskAssignmentSchema.index({ workspaceId: 1, contextType: 1 })
 
 const TaskAssignment: Model<ITaskAssignment> =
   mongoose.models.TaskAssignment ||

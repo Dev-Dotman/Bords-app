@@ -12,6 +12,7 @@ import { sendEmail } from '@/lib/email'
 import OrganizationInviteEmail from '@/emails/OrganizationInviteEmail'
 
 // GET /api/organizations/[orgId]/employees — list employees
+// Org owner and org members can view the list; only owner sees pending invitations.
 export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ orgId: string }> }
@@ -24,7 +25,17 @@ export async function GET(
 
   const org = await Organization.findById(orgId).lean()
   if (!org) return notFound('Organization')
-  if (org.ownerId.toString() !== user.id) return forbidden()
+
+  const isOwner = org.ownerId.toString() === user.id
+
+  // If not owner, verify the user is at least a member
+  if (!isOwner) {
+    const membership = await EmployeeMembership.findOne({
+      organizationId: orgId,
+      userId: user.id,
+    }).lean()
+    if (!membership) return forbidden()
+  }
 
   const memberships = await EmployeeMembership.find({ organizationId: orgId })
     .populate('userId', 'email firstName lastName image')
@@ -44,21 +55,26 @@ export async function GET(
     createdAt: m.createdAt?.toISOString(),
   }))
 
-  // Also get pending invitations
-  const pendingInvitations = await Invitation.find({
-    organizationId: orgId,
-    role: 'employee',
-    status: 'pending',
-  }).lean()
-
-  return NextResponse.json({
-    employees,
-    pendingInvitations: pendingInvitations.map((i: any) => ({
+  // Only show pending invitations to the owner
+  let pendingInvitations: any[] = []
+  if (isOwner) {
+    const invitations = await Invitation.find({
+      organizationId: orgId,
+      role: 'employee',
+      status: 'pending',
+    }).lean()
+    pendingInvitations = invitations.map((i: any) => ({
       _id: i._id.toString(),
       email: i.email,
       status: i.status,
       createdAt: i.createdAt?.toISOString(),
-    })),
+    }))
+  }
+
+  return NextResponse.json({
+    employees,
+    pendingInvitations,
+    isOwner,
   })
 }
 

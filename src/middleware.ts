@@ -14,11 +14,12 @@ export const config = {
      * - /pricing (public pricing page)
      * - /shared/* (public shared boards)
      * - /api/auth/* (auth API routes)
+     * - /api/cron/* (cron job endpoints — use Bearer token auth)
      * - /api/subscription/plans (public plans endpoint)
      * - /api/boards/public/* (public board viewer API)
      * - /_next/* (Next.js internals)
      * - /favicon.ico, /bordclear.png, /bord*.png (static files)
      */
-    '/((?!login|signup|forgot-password|reset-password|verify-email|pricing|shared|api/auth|api/subscription/plans|api/boards/public|_next|favicon.ico|bordclear.png|bord.*\\.png).*)',
+    '/((?!login|signup|forgot-password|reset-password|verify-email|pricing|shared|api/auth|api/cron|api/subscription/plans|api/boards/public|_next|favicon.ico|bordclear.png|bord.*\\.png).*)',
   ],
 }

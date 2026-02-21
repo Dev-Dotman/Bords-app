@@ -1,4 +1,4 @@
-import { Trash2, Check, Clock, Pencil, Palette, ChevronDown, ChevronUp, MoreVertical } from 'lucide-react'
+import { Trash2, Check, Clock, Pencil, Palette, ChevronDown, ChevronUp, MoreVertical, GripVertical } from 'lucide-react'
 import { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { useDraggable } from '@dnd-kit/core'
@@ -8,6 +8,7 @@ import { useChecklistStore, ChecklistItem as ChecklistItemType } from '../store/
 import { useDragModeStore } from '../store/dragModeStore'
 import { toast } from 'react-hot-toast'
 import { format, formatDistanceToNow } from 'date-fns'
+import { watchDeadlines } from '../lib/reminders'
 import { TaskModal } from './TaskModal'
 import { useConnectionStore } from '../store/connectionStore';
 import { ConnectionNode } from './ConnectionNode'
@@ -18,6 +19,8 @@ import { ColorPicker } from './ColorPicker'
 import { AssignButton } from './delegation/AssignButton'
 import { useDelegationStore } from '../store/delegationStore'
 import { useViewportScale } from '../hooks/useViewportScale'
+import { useBoardSyncStore } from '../store/boardSyncStore'
+import { useBoardStore } from '../store/boardStore'
 
 /** Small inline indicator showing assignee completion avatars for multi-assigned checklist items */
 function AssigneeCompletionDots({ sourceId }: { sourceId: string }) {
@@ -168,6 +171,9 @@ interface ChecklistProps {
 export function Checklist({ id, title, items, position, color, width = 320, height = 400 }: ChecklistProps) {
   const { updateChecklist, deleteChecklist, toggleItem, updateItem, reorderItem } = useChecklistStore()
   const isDragEnabled = useDragModeStore((state) => state.isDragEnabled)
+  const _currentBoardId = useBoardStore((state) => state.currentBoardId)
+  const boardPermission = useBoardSyncStore((s) => s.boardPermissions[_currentBoardId || ''] || 'owner')
+  const isViewOnly = boardPermission === 'view'
   const [editingTask, setEditingTask] = useState<ChecklistItemType | null>(null);
   const [showAddTaskModal, setShowAddTaskModal] = useState(false);
   const { selectedItems, selectItem, deselectItem, isVisible, removeConnectionsByItemId } = useConnectionStore();
@@ -202,84 +208,22 @@ export function Checklist({ id, title, items, position, color, width = 320, heig
     }
   };
 
-  // Check deadlines and send reminders
+  // Watch deadlines and send reminders via centralized system
   useEffect(() => {
-    const timeouts: NodeJS.Timeout[] = []
-    
-    items.forEach((item) => {
-      // Only schedule reminders for incomplete items with deadlines
-      if (item.deadline && !item.completed) {
-        const now = Date.now()
-        const deadlineTime = new Date(item.deadline).getTime()
-        const timeUntilDeadline = deadlineTime - now
-        
-        // Helper to send reminder (toast + email)
-        const sendReminder = async (timeRemaining: string, isUrgent: boolean = false) => {
-          // Double-check item is still not completed before sending reminder
-          const currentItem = items.find(i => i.id === item.id)
-          if (currentItem?.completed) {
-            return // Don't send reminder if item was completed
-          }
-          
-          // Show toast notification
-          toast(
-            timeRemaining === 'overdue'
-              ? `Deadline reached: ${item.text}`
-              : `Reminder: ${item.text} is due in ${timeRemaining}`,
-            {
-              icon: isUrgent ? '⚠️' : '⏰',
-              duration: 5000,
-            }
-          )
-          
-          // Send email reminder
-          try {
-            await fetch('/api/send-reminder', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                checklistTitle: title,
-                taskText: item.text,
-                timeRemaining,
-                deadline: formatDateForDisplay(item.deadline) || '',
-                boardUrl: window.location.href,
-              }),
-            })
-          } catch (error) {
-            console.error('Failed to send email reminder:', error)
-          }
-        }
-        
-        // Schedule reminders
-        const reminderIntervals = [
-          { time: 30 * 60 * 1000, label: '30 minutes', urgent: false }, // 30 minutes
-          { time: 10 * 60 * 1000, label: '10 minutes', urgent: true },  // 10 minutes
-          { time: 5 * 60 * 1000, label: '5 minutes', urgent: true },    // 5 minutes
-          { time: 0, label: 'overdue', urgent: true },                   // Deadline reached
-        ]
-        
-        reminderIntervals.forEach(({ time, label, urgent }) => {
-          const timeToReminder = timeUntilDeadline - time
-          
-          if (timeToReminder > 0) {
-            const timeout = setTimeout(() => {
-              sendReminder(label, urgent)
-            }, timeToReminder)
-            
-            timeouts.push(timeout)
-          } else if (time === 0 && timeUntilDeadline <= 0 && timeUntilDeadline > -60000) {
-            // If deadline just passed (within last minute), send overdue notification
-            sendReminder('overdue', true)
-          }
-        })
-      }
+    return watchDeadlines({
+      watchId: `checklist-${id}`,
+      source: 'checklist',
+      title,
+      items: items
+        .filter((item) => item.deadline && !item.completed)
+        .map((item) => ({
+          itemId: item.id,
+          text: item.text,
+          deadline: new Date(item.deadline!),
+          completed: item.completed,
+        })),
     })
-    
-    return () => {
-      // Clear all scheduled timeouts when effect re-runs or component unmounts
-      timeouts.forEach(timeout => clearTimeout(timeout))
-    }
-  }, [items, title])
+  }, [items, title, id])
 
   // Check for overflow
   useEffect(() => {
@@ -392,7 +336,7 @@ export function Checklist({ id, title, items, position, color, width = 320, heig
   const baseIconSize = 16
   const baseSpacing = 16
 
-  // Calculate scaled dimensions
+  // Use base dimensions — parent scale(zoom) handles visual scaling
   const scaledWidth = baseWidth * zoom
   const scaledFontSize = baseFontSize * zoom
   const scaledIconSize = baseIconSize * zoom
@@ -420,8 +364,10 @@ export function Checklist({ id, title, items, position, color, width = 320, heig
     data: { type: 'checklist', id, position }
   })
 
+  const zoomedTransform = transform ? { ...transform, x: transform.x / zoom, y: transform.y / zoom } : null
+
   const style = {
-    transform: CSS.Translate.toString(transform),
+    transform: CSS.Translate.toString(zoomedTransform),
     position: 'absolute' as const,
     left: position.x,
     top: position.y,
@@ -512,6 +458,10 @@ export function Checklist({ id, title, items, position, color, width = 320, heig
         <ConnectionNode id={id} type="checklist" position={position} side="left" isVisible={showNodes} />
         <ConnectionNode id={id} type="checklist" position={position} side="right" isVisible={showNodes} />
         <div className="flex justify-between items-start mb-5 relative">
+          <GripVertical
+            size={18}
+            className="text-gray-400 shrink-0 mt-1.5"
+          />
           {isEditingTitle ? (
             <input
               type="text"
@@ -544,14 +494,16 @@ export function Checklist({ id, title, items, position, color, width = 320, heig
               className="font-semibold text-gray-800 checklist-title cursor-pointer hover:bg-white/40 rounded-lg px-2 py-1 transition-colors"
               onDoubleClick={(e) => {
                 e.stopPropagation()
+                if (isViewOnly) return
                 setEditTitleValue(title)
                 setIsEditingTitle(true)
               }}
-              title="Double-click to rename"
+              title={isViewOnly ? title : "Double-click to rename"}
             >
               {title}
             </h3>
           )}
+          {!isViewOnly && (
           <div className="flex items-center gap-1">
             <button
               ref={colorBtnRef}
@@ -572,6 +524,7 @@ export function Checklist({ id, title, items, position, color, width = 320, heig
               <Trash2 size={scaledIconSize} className="text-gray-400 group-hover:text-red-500 transition-colors" />
             </button>
           </div>
+          )}
 
           {/* Color Picker */}
           {showColorPicker && (
@@ -598,13 +551,16 @@ export function Checklist({ id, title, items, position, color, width = 320, heig
               <div className="flex items-start gap-2">
                 <button
                   onClick={() => {
+                    if (isViewOnly) return
                     toggleItem(id, item.id)
                     // Sync to TaskAssignment (fire-and-forget)
                     useDelegationStore.getState().syncOwnerChecklistToggle(item.id, !item.completed)
                   }}
+                  disabled={isViewOnly}
                   className={`
                     p-1 rounded-md transition-all duration-200 mt-0.5 flex-shrink-0 hover:scale-110
                     ${item.completed ? 'bg-green-500 text-white shadow-sm' : 'bg-white/80 hover:bg-white border border-black/10'}
+                    ${isViewOnly ? 'cursor-default hover:scale-100' : ''}
                   `}
                 >
                   <Check size={12} className={item.completed ? '' : 'text-gray-400'} />
@@ -612,9 +568,10 @@ export function Checklist({ id, title, items, position, color, width = 320, heig
                 
                 <div className="flex-1 min-w-0">
                   <p
-                    contentEditable
+                    contentEditable={!isViewOnly}
                     suppressContentEditableWarning
                     onBlur={(e) => {
+                      if (isViewOnly) return
                       const newText = e.currentTarget.textContent || ''
                       if (newText.trim() !== item.text) {
                         updateItem(id, item.id, { text: newText.trim() })
@@ -668,7 +625,7 @@ export function Checklist({ id, title, items, position, color, width = 320, heig
 
               {/* Hover actions — desktop: pill on hover; touch: three-dot popup */}
               {/* Desktop hover pill */}
-              <div className="absolute bottom-1 right-1 opacity-0 group-hover/item:opacity-100 transition-all duration-150 z-[9999] touch-hidden">
+              {!isViewOnly && <div className="absolute bottom-1 right-1 opacity-0 group-hover/item:opacity-100 transition-all duration-150 z-[9999] touch-hidden">
                 <div className="flex items-center gap-px bg-white/95 backdrop-blur-md rounded-lg shadow-md border border-black/10 px-1 py-0.5">
                   <button
                     onClick={() => { if (index > 0) reorderItem(id, index, index - 1) }}
@@ -712,10 +669,10 @@ export function Checklist({ id, title, items, position, color, width = 320, heig
                     <Trash2 size={11} />
                   </button>
                 </div>
-              </div>
+              </div>}
 
               {/* Touch-only three-dot popup menu */}
-              <TouchTaskMenu
+              {!isViewOnly && <TouchTaskMenu
                 index={index}
                 total={items.length}
                 onMoveUp={() => { if (index > 0) reorderItem(id, index, index - 1) }}
@@ -732,7 +689,7 @@ export function Checklist({ id, title, items, position, color, width = 320, heig
                     className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded-lg transition-colors"
                   />
                 }
-              />
+              />}
             </div>
           ))}
         </div>
@@ -755,7 +712,7 @@ export function Checklist({ id, title, items, position, color, width = 320, heig
           </div>
         )}
 
-        {!hasOverflow && (
+        {!hasOverflow && !isViewOnly && (
           <button
             onClick={() => setShowAddTaskModal(true)}
             className="mt-2 text-sm text-gray-600 hover:text-gray-800 font-semibold hover:bg-white/50 rounded-xl px-3 py-1.5 transition-all duration-200 hover:scale-105 hover:shadow-sm"
@@ -767,7 +724,7 @@ export function Checklist({ id, title, items, position, color, width = 320, heig
         </div>
       </Resizable>
 
-      {hasOverflow && (
+      {hasOverflow && !isViewOnly && (
         <button
           onClick={(e) => {
             e.stopPropagation()
@@ -807,6 +764,7 @@ export function Checklist({ id, title, items, position, color, width = 320, heig
         onConfirm={() => {
           removeConnectionsByItemId(id)
           deleteChecklist(id)
+          useZIndexStore.getState().removeItem(id)
           setShowDeleteConfirm(false)
         }}
         onCancel={() => setShowDeleteConfirm(false)}

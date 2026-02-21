@@ -115,8 +115,11 @@ export function StickyNote({ id, text, position, color, width = 192, height }: S
     return otherRect.left < thisRect.left ? 'left' : 'right'
   }
 
+  // Adjust drag transform for zoom — dnd-kit reports screen‑px but we're inside scale(zoom)
+  const zoomedTransform = transform ? { ...transform, x: transform.x / zoom, y: transform.y / zoom } : null
+
   const style = {
-    transform: CSS.Translate.toString(transform),
+    transform: CSS.Translate.toString(zoomedTransform),
     position: 'absolute' as const,
     left: position.x,
     top: position.y,
@@ -298,6 +301,7 @@ export function StickyNote({ id, text, position, color, width = 192, height }: S
         onConfirm={() => {
           removeConnectionsByItemId(id)
           deleteNote(id)
+          useZIndexStore.getState().removeItem(id)
           setShowDeleteConfirm(false)
         }}
         onCancel={() => setShowDeleteConfirm(false)}

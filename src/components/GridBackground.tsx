@@ -34,9 +34,9 @@ export function GridBackground({ hoveredCell, onCellHover, onCellClick }: GridBa
   const handleWheel = (e: WheelEvent<HTMLDivElement>) => {
     if (e.ctrlKey || e.metaKey) {
       e.preventDefault()
-      const newZoom = zoom + (-e.deltaY * 0.01)
-      const clampedZoom = Math.min(Math.max(0.5, newZoom), 2)
-      setZoom(clampedZoom)
+      const newZoom = zoom + (-e.deltaY * 0.002)
+      const clampedZoom = Math.min(Math.max(0.25, newZoom), 2)
+      setZoom(Math.round(clampedZoom * 100) / 100)
     } else {
       e.preventDefault()
       const scrollSpeed = 1.5
@@ -45,16 +45,6 @@ export function GridBackground({ hoveredCell, onCellHover, onCellClick }: GridBa
       setScrollY(Math.max(0, Math.min(newScrollY, maxScroll)))
     }
   }
-
-  // Expose scroll and zoom values to parent
-  useEffect(() => {
-    window.dispatchEvent(new CustomEvent('gridUpdate', { 
-      detail: { 
-        scroll: scrollY,
-        zoom 
-      }
-    }))
-  }, [scrollY, zoom])
 
   return (
     <div 

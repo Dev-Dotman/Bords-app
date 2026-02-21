@@ -5,6 +5,7 @@ import TaskAssignment from '@/models/TaskAssignment'
 import PublishSnapshot from '@/models/PublishSnapshot'
 import UnpublishedChangeTracker from '@/models/UnpublishedChangeTracker'
 import Notification from '@/models/Notification'
+import Organization from '@/models/Organization'
 import { getAuthUser, unauthorized, notFound, forbidden, badRequest } from '@/lib/api-helpers'
 
 // POST /api/bords/[bordId]/publish — publish all draft assignments
@@ -21,6 +22,11 @@ export async function POST(
   const bord = await Bord.findById(bordId)
   if (!bord) return notFound('Bord')
   if (bord.ownerId.toString() !== user.id) return forbidden()
+
+  // Fetch organization name for notification context
+  const org = await Organization.findById(bord.organizationId).lean() as any
+  const orgId = bord.organizationId.toString()
+  const orgName = org?.name || ''
 
   // Get all draft assignments for this bord
   const draftAssignments = await TaskAssignment.find({
@@ -72,6 +78,8 @@ export async function POST(
           bordId: bord._id.toString(),
           taskAssignmentId: assignment._id.toString(),
           bordTitle: bord.title,
+          organizationId: orgId,
+          organizationName: orgName,
         },
       })
     } else {
@@ -85,6 +93,8 @@ export async function POST(
           bordId: bord._id.toString(),
           taskAssignmentId: assignment._id.toString(),
           bordTitle: bord.title,
+          organizationId: orgId,
+          organizationName: orgName,
         },
       })
     }
@@ -105,6 +115,8 @@ export async function POST(
         bordId: bord._id.toString(),
         taskAssignmentId: assignment._id.toString(),
         bordTitle: bord.title,
+        organizationId: orgId,
+        organizationName: orgName,
       },
     })
     // Permanently delete soft-deleted ones after publishing

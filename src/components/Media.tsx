@@ -15,6 +15,7 @@ import { useDragModeStore } from "../store/dragModeStore";
 import { useConnectionStore } from "../store/connectionStore";
 import { ConnectionNode } from "./ConnectionNode";
 import { useZIndexStore } from '../store/zIndexStore'
+import { useGridStore } from '../store/gridStore'
 import { DeleteConfirmModal } from './DeleteConfirmModal'
 import { ColorPicker } from './ColorPicker'
 import { useViewportScale } from '../hooks/useViewportScale'
@@ -123,8 +124,11 @@ export function Media({
     data: { type: 'media', id, position }
   })
 
+  const zoom = useGridStore((s) => s.zoom)
+  const zoomedTransform = transform ? { ...transform, x: transform.x / zoom, y: transform.y / zoom } : null
+
   const style = {
-    transform: CSS.Translate.toString(transform),
+    transform: CSS.Translate.toString(zoomedTransform),
     position: 'absolute' as const,
     left: position.x,
     top: position.y,
@@ -364,6 +368,7 @@ export function Media({
         onConfirm={() => {
           removeConnectionsByItemId(id)
           deleteMedia(id)
+          useZIndexStore.getState().removeItem(id)
           setShowDeleteConfirm(false)
         }}
         onCancel={() => setShowDeleteConfirm(false)}

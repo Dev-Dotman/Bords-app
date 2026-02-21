@@ -88,6 +88,11 @@ export const useDrawingStore = create<DrawingStore>()(
     }),
     {
       name: 'drawing-storage',
+      // Don't persist undo history — it can grow large and is session-only
+      partialize: (state) => {
+        const { undoneDrawings, ...rest } = state
+        return rest
+      },
     }
   )
 )

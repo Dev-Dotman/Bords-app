@@ -4,9 +4,9 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { motion } from "framer-motion";
-import { X } from "lucide-react";
+import { X, Layout, Plus } from "lucide-react";
 
-import { DndContext, DragEndEvent, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
+import { DndContext, DragEndEvent, DragStartEvent, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
 import { GridBackground } from "@/components/GridBackground";
 import { Dock } from "@/components/Dock";
 import { TopBar } from "@/components/TopBar";
@@ -15,16 +15,18 @@ import { Checklist } from "@/components/Checklist";
 import { useThemeStore } from "@/store/themeStore";
 import { useNoteStore } from "@/store/stickyNoteStore";
 import { useChecklistStore } from "@/store/checklistStore";
-import { Connections, ConnectionLines } from "@/components/Connections";
+import { Connections, ConnectionLines, notifyConnectionsDragStart, notifyConnectionsDragEnd, scheduleConnectionUpdate } from "@/components/Connections";
 import { DragLayer } from "@/components/DragLayer";
 import { useConnectionStore } from "@/store/connectionStore";
 import { Text } from "@/components/Text";
 import { useTextStore } from "@/store/textStore";
 import { OrganizePanel } from "@/components/OrganizePanel";
 import { useBoardStore } from "@/store/boardStore";
-import { DrawingCanvas } from "@/components/DrawingCanvas";
+import { DrawingCanvas, DrawingSVGLayer } from "@/components/DrawingCanvas";
 import { KanbanBoard } from "@/components/KanbanBoard";
 import { useKanbanStore } from "@/store/kanbanStore";
+import { Reminder } from "@/components/Reminder";
+import { useReminderStore } from "@/store/reminderStore";
 import { SideBar } from "@/components/SideBar";
 import { ExportModal } from "@/components/ExportModal";
 import { Media } from "@/components/Media";
@@ -43,6 +45,9 @@ import { useOrganizationStore } from "@/store/organizationStore";
 import { useBoardSyncStore, gatherBoardDataForBeacon } from "@/store/boardSyncStore";
 import { useViewportScale } from "@/hooks/useViewportScale";
 import { PresentationDock } from "@/components/PresentationDock";
+import { useWorkspaceStore } from "@/store/workspaceStore";
+import { useZIndexStore } from "@/store/zIndexStore";
+
 
 // Fullscreen presentation mode is handled inline in the Home component
 // (no separate overlay component needed — avoids stacking context issues)
@@ -53,6 +58,8 @@ export default function Home() {
   const [hoveredCell, setHoveredCell] = useState<number | null>(null);
   const [deviceType, setDeviceType] = useState<'desktop' | 'tablet-landscape' | 'tablet-portrait' | 'phone'>('desktop');
   const isDark = useThemeStore((state) => state.isDark);
+  const zoom = useGridStore((state) => state.zoom);
+  const setZoom = useGridStore((state) => state.setZoom);
   const setCurrentUserId = useBoardStore((state) => state.setCurrentUserId);
   
   // Get delete functions from all stores for cascade cleanup
@@ -63,6 +70,8 @@ export default function Home() {
   const { deleteMedia } = useMediaStore();
   const { deleteDrawing } = useDrawingStore();
   const { clearBoardConnections } = useConnectionStore();
+  const { reminders, updateReminder: updateReminderPos } = useReminderStore();
+  const { deleteReminder } = useReminderStore();
 
   // All hooks must be called before any conditional returns
   const { notes, updateNote } = useNoteStore();
@@ -88,58 +97,66 @@ export default function Home() {
 
   const vScale = useViewportScale();
 
+  // Handle drag start — notify connection lines to start tracking
+  const handleDragStart = (_event: DragStartEvent) => {
+    notifyConnectionsDragStart()
+  }
+
   // Handle drag end
   const handleDragEnd = (event: DragEndEvent) => {
+    notifyConnectionsDragEnd()
     const { active, delta } = event;
     const data = active.data.current;
     const snap = useGridStore.getState().snapValue;
+    const z = useGridStore.getState().zoom;
+    // Convert screen-pixel delta to content-space delta
+    const dx = delta.x / z;
+    const dy = delta.y / z;
+    // Canvas scroll width is in rendered pixels; divide by zoom to get content-space boundary
+    const canvasEl = document.querySelector('[data-board-canvas]');
+    const contentW = canvasEl ? canvasEl.scrollWidth / z : window.innerWidth * 2;
+    const padding = 16;
     
     if (data?.type === 'note') {
-      const padding = 16;
-      const scaledWidth = 192 * vScale * (useGridStore.getState().zoom);
-      const canvasEl = document.querySelector('[data-board-canvas]');
-      const canvasScrollW = canvasEl ? canvasEl.scrollWidth : window.innerWidth * 2;
+      const scaledWidth = 192 * vScale;
       const newPosition = {
-        x: snap(Math.max(padding, Math.min(canvasScrollW - (scaledWidth + padding), data.position.x + delta.x))),
-        y: snap(data.position.y + delta.y)
+        x: snap(Math.max(padding, Math.min(contentW - (scaledWidth + padding), data.position.x + dx))),
+        y: snap(data.position.y + dy)
       };
       updateNote(data.id, { position: newPosition });
     } else if (data?.type === 'checklist') {
-      const padding = 16;
-      const scaledWidth = 320 * vScale * (useGridStore.getState().zoom);
-      const canvasEl = document.querySelector('[data-board-canvas]');
-      const canvasScrollW = canvasEl ? canvasEl.scrollWidth : window.innerWidth * 2;
+      const scaledWidth = 320 * vScale;
       const newPosition = {
-        x: snap(Math.max(padding, Math.min(canvasScrollW - (scaledWidth + padding), data.position.x + delta.x))),
-        y: snap(data.position.y + delta.y)
+        x: snap(Math.max(padding, Math.min(contentW - (scaledWidth + padding), data.position.x + dx))),
+        y: snap(data.position.y + dy)
       };
       updateChecklist(data.id, { position: newPosition });
     } else if (data?.type === 'media') {
       const newPosition = {
-        x: snap(data.position.x + delta.x),
-        y: snap(data.position.y + delta.y)
+        x: snap(data.position.x + dx),
+        y: snap(data.position.y + dy)
       };
       updateMedia(data.id, { position: newPosition });
     } else if (data?.type === 'text') {
-      const padding = 16;
-      const baseWidth = 200;
-      const safeWidth = Math.max(baseWidth, texts.find(t => t.id === data.id)?.text.length || 0 * data.fontSize * 0.6);
-      const canvasEl = document.querySelector('[data-board-canvas]');
-      const canvasScrollW = canvasEl ? canvasEl.scrollWidth : window.innerWidth * 2;
+      const textItem = texts.find(t => t.id === data.id);
+      const textWidth = (textItem?.width || 200) * vScale;
       const newPosition = {
-        x: snap(Math.max(padding, Math.min(canvasScrollW - (safeWidth + padding), data.position.x + delta.x))),
-        y: snap(data.position.y + delta.y)
+        x: snap(Math.max(padding, Math.min(contentW - (textWidth + padding), data.position.x + dx))),
+        y: snap(data.position.y + dy)
       };
       updateText(data.id, { position: newPosition });
     } else if (data?.type === 'kanban') {
-      const padding = 16;
-      const canvasEl = document.querySelector('[data-board-canvas]');
-      const canvasScrollW = canvasEl ? canvasEl.scrollWidth : window.innerWidth * 2;
       const newPosition = {
-        x: snap(Math.max(padding, Math.min(canvasScrollW - 800 * vScale, data.position.x + delta.x))),
-        y: snap(data.position.y + delta.y)
+        x: snap(Math.max(padding, Math.min(contentW - 800 * vScale, data.position.x + dx))),
+        y: snap(data.position.y + dy)
       };
       updateBoardPosition(data.id, newPosition);
+    } else if (data?.type === 'reminder') {
+      const newPosition = {
+        x: snap(Math.max(padding, Math.min(contentW - 280 * vScale, data.position.x + dx))),
+        y: snap(data.position.y + dy)
+      };
+      updateReminderPos(data.id, { position: newPosition });
     }
   };
 
@@ -151,6 +168,94 @@ export default function Home() {
   const [presTransform, setPresTransform] = useState<{ tx: number; ty: number; s: number } | null>(null)
   const [presHintVisible, setPresHintVisible] = useState(false)
   const canvasRef = useRef<HTMLDivElement>(null)
+
+  // Ctrl/Cmd+Wheel or trackpad pinch zoom handler — global so it works
+  // even when cursor is over Dock, TopBar, SideBar, etc.
+  useEffect(() => {
+    const handleWheel = (e: WheelEvent) => {
+      if (!(e.ctrlKey || e.metaKey)) return
+      e.preventDefault()
+
+      // Trackpad pinch fires small deltaY (±1-10); mouse wheel fires larger (±100+)
+      // Use adaptive sensitivity so both feel responsive
+      const absDelta = Math.abs(e.deltaY)
+      const sensitivity = absDelta < 10 ? 0.01 : 0.002
+      const delta = -e.deltaY * sensitivity
+      const currentZoom = useGridStore.getState().zoom
+      const raw = currentZoom + delta
+      const newZoom = Math.min(Math.max(0.25, raw), 2)
+      // Round to nearest 1% to prevent floating-point drift
+      useGridStore.getState().setZoom(Math.round(newZoom * 100) / 100)
+      scheduleConnectionUpdate()
+    }
+
+    document.addEventListener('wheel', handleWheel, { passive: false })
+    return () => document.removeEventListener('wheel', handleWheel)
+  }, [])
+
+  // Canvas panning: hold-click on empty background → drag to scroll
+  const panRef = useRef({ active: false, panning: false, x: 0, y: 0, scrollLeft: 0, scrollTop: 0 })
+  const panCleanupRef = useRef<(() => void) | null>(null)
+  const isDrawing = useDrawingStore((state) => state.isDrawing)
+
+  // Safety cleanup: if component unmounts mid-pan, remove document listeners
+  useEffect(() => {
+    return () => {
+      panCleanupRef.current?.()
+      panCleanupRef.current = null
+    }
+  }, [])
+
+  const handleCanvasPanStart = useCallback((e: React.MouseEvent) => {
+    if (e.button !== 0) return
+    if (isDrawing || isPresentationMode || isFullScreen) return
+    const target = e.target as HTMLElement
+    if (target.closest('[data-board-item]') || target.closest('.item-container') || target.closest('[data-ui-control]')) return
+
+    panRef.current = {
+      active: true,
+      panning: false,
+      x: e.clientX,
+      y: e.clientY,
+      scrollLeft: canvasRef.current?.scrollLeft || 0,
+      scrollTop: canvasRef.current?.scrollTop || 0,
+    }
+
+    const PAN_THRESHOLD = 5
+
+    const handleMouseMove = (ev: MouseEvent) => {
+      const pan = panRef.current
+      if (!pan.active || !canvasRef.current) return
+      const dx = ev.clientX - pan.x
+      const dy = ev.clientY - pan.y
+
+      if (!pan.panning) {
+        if (Math.abs(dx) > PAN_THRESHOLD || Math.abs(dy) > PAN_THRESHOLD) {
+          pan.panning = true
+          document.body.style.cursor = 'grabbing'
+          document.body.style.userSelect = 'none'
+        }
+        return
+      }
+
+      canvasRef.current.scrollLeft = pan.scrollLeft - dx
+      canvasRef.current.scrollTop = pan.scrollTop - dy
+    }
+
+    const handleMouseUp = () => {
+      panRef.current.active = false
+      panRef.current.panning = false
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+      document.removeEventListener('mousemove', handleMouseMove)
+      document.removeEventListener('mouseup', handleMouseUp)
+      panCleanupRef.current = null
+    }
+
+    document.addEventListener('mousemove', handleMouseMove)
+    document.addEventListener('mouseup', handleMouseUp)
+    panCleanupRef.current = handleMouseUp
+  }, [isDrawing, isPresentationMode, isFullScreen])
 
   // Detect device type: phone, tablet (portrait/landscape), or desktop
   useEffect(() => {
@@ -192,6 +297,8 @@ export default function Home() {
       router.push("/login");
     } else if (status === "authenticated" && session?.user?.email) {
       setCurrentUserId(session.user.email);
+      // Auto-provision personal + org_container workspaces
+      useWorkspaceStore.getState().fetchWorkspaces();
     }
   }, [status, router, session, setCurrentUserId]);
 
@@ -251,8 +358,8 @@ export default function Home() {
       }
     }
 
-    // Poll for changes every 5 seconds (lightweight — just computes a local hash)
-    const interval = setInterval(checkForChanges, 5000)
+    // Poll for changes every 30 seconds (computes a local hash)
+    const interval = setInterval(checkForChanges, 30_000)
 
     // Also push any dirty boards when the user leaves the page
     const handleBeforeUnload = () => {
@@ -360,7 +467,7 @@ export default function Home() {
   // Listen for board deletion to cleanup associated items
   useEffect(() => {
     const handleBoardDeleted = (event: CustomEvent) => {
-      const { boardId, noteIds, checklistIds, textIds, kanbanIds, mediaIds, drawingIds } = event.detail;
+      const { boardId, noteIds, checklistIds, textIds, kanbanIds, mediaIds, drawingIds, reminderIds } = event.detail;
       
       // Delete all connections for this board
       clearBoardConnections(boardId);
@@ -382,11 +489,18 @@ export default function Home() {
       
       // Delete all drawings
       drawingIds.forEach((id: string) => deleteDrawing(id));
+
+      // Delete all reminders
+      (reminderIds || []).forEach((id: string) => deleteReminder(id));
+
+      // Clean up zIndex entries for deleted items
+      const allDeletedIds = [...noteIds, ...checklistIds, ...textIds, ...kanbanIds, ...mediaIds, ...drawingIds, ...(reminderIds || [])]
+      allDeletedIds.forEach((id: string) => useZIndexStore.getState().removeItem(id))
     };
     
     window.addEventListener('boardDeleted', handleBoardDeleted as EventListener);
     return () => window.removeEventListener('boardDeleted', handleBoardDeleted as EventListener);
-  }, [deleteNote, deleteChecklist, deleteText, deleteKanban, deleteMedia, deleteDrawing, clearBoardConnections]);
+  }, [deleteNote, deleteChecklist, deleteText, deleteKanban, deleteMedia, deleteDrawing, deleteReminder, clearBoardConnections]);
 
   // Initialize delegation data when authenticated
   useEffect(() => {
@@ -406,6 +520,16 @@ export default function Home() {
       fetchAssignments(bord._id);
     }
   }, [currentBoardId, status]);
+
+  // Rewire connection lines after board items render (on page load / board switch)
+  // The DOM nodes need to exist before positions can be calculated, so we wait
+  // a tick after React renders the filtered items.
+  useEffect(() => {
+    if (!currentBoardId) return
+    const t1 = setTimeout(() => scheduleConnectionUpdate(), 100)
+    const t2 = setTimeout(() => scheduleConnectionUpdate(), 400)
+    return () => { clearTimeout(t1); clearTimeout(t2) }
+  }, [currentBoardId]);
 
   // Show loading state while checking authentication
   if (status === "loading") {
@@ -518,6 +642,9 @@ export default function Home() {
   const filteredMedias = medias.filter((media) =>
     currentBoard?.medias?.includes(media.id)
   );
+  const filteredReminders = reminders.filter((reminder) =>
+    currentBoard?.reminders?.includes(reminder.id)
+  );
 
   const handleGlobalClick = (e: React.MouseEvent) => {
     const target = e.target as HTMLElement;
@@ -533,8 +660,63 @@ export default function Home() {
     }
   };
 
+  // Empty state — no board selected
+  if (!currentBoardId || !currentBoard) {
+    return (
+      <div className={`fixed inset-0 ${isDark ? 'bg-zinc-900' : 'bg-zinc-100'}`}>
+        <GridBackground hoveredCell={null} onCellHover={() => {}} onCellClick={() => {}} />
+        <div className="fixed inset-0 flex items-center justify-center" style={{ zIndex: 1 }}>
+        <div className="text-center max-w-md px-6">
+          <div className="w-16 h-16 bg-black rounded-2xl flex items-center justify-center p-3 mx-auto mb-6 border border-zinc-800">
+            <img src="/bordclear.png" alt="BORDS" className="w-full h-full object-contain" />
+          </div>
+          <h2 className={`text-xl font-semibold mb-2 ${isDark ? 'text-white' : 'text-zinc-900'}`}>
+            No board selected
+          </h2>
+          <p className={`text-sm mb-6 ${isDark ? 'text-zinc-400' : 'text-zinc-500'}`}>
+            Select an existing board or create a new one to get started.
+          </p>
+          <div className="flex gap-3 justify-center">
+            <button
+              onClick={() => useBoardStore.getState().setBoardsPanelOpen(true)}
+              className={`px-5 py-2.5 rounded-xl font-medium text-sm transition-colors ${
+                isDark
+                  ? 'bg-zinc-800 text-white hover:bg-zinc-700 border border-zinc-700'
+                  : 'bg-white text-zinc-900 hover:bg-zinc-50 border border-zinc-200'
+              }`}
+            >
+              <Layout size={16} className="inline mr-2 -mt-0.5" />
+              Select Board
+            </button>
+            <button
+              onClick={() => {
+                useBoardStore.getState().setBoardsPanelOpen(true)
+                // Small delay so the panel opens first
+                setTimeout(() => {
+                  const createBtn = document.querySelector('[data-create-board-btn]') as HTMLElement
+                  createBtn?.click()
+                }, 100)
+              }}
+              className="px-5 py-2.5 rounded-xl font-medium text-sm bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+            >
+              <Plus size={16} className="inline mr-2 -mt-0.5" />
+              Create Board
+            </button>
+          </div>
+        </div>
+        </div>
+        {/* Still render TopBar + BoardsPanel so user can navigate */}
+        <div className="fixed inset-0 pointer-events-none" style={{ zIndex: 50 }}>
+          <div className="pointer-events-auto">
+            <TopBar />
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return (
-    <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
+    <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd} autoScroll={false}>
       <div
         className={`fixed inset-0 ${isDark ? "bg-zinc-900" : "bg-zinc-100"} app-background ${isFullScreen ? 'overflow-hidden' : 'overflow-auto'}`}
         onClick={isFullScreen ? undefined : handleGlobalClick}
@@ -646,10 +828,11 @@ export default function Home() {
           ref={canvasRef}
           className={`fixed inset-0 ${isFullScreen ? 'overflow-visible' : 'overflow-auto'} pb-[450vh]`}
           data-board-canvas
+          onMouseDown={handleCanvasPanStart}
           style={isFullScreen && presTransform ? {
             transform: `translate(${presTransform.tx}px, ${presTransform.ty}px) scale(${presTransform.s})`,
             transformOrigin: '0 0',
-            pointerEvents: 'none',
+            pointerEvents: 'none' as const,
           } : undefined}
         >
           {/* Connection Lines SVG - rendered before items so lines appear behind */}
@@ -658,10 +841,17 @@ export default function Home() {
           {/* Items Layer */}
           <div
             className="relative"
-            style={{ paddingTop: "20vh", paddingBottom: "200vh", minWidth: "200vw" }}
+            data-items-layer
+            style={{
+              paddingTop: "20vh",
+              paddingBottom: "200vh",
+              minWidth: "200vw",
+              transform: `scale(${zoom})`,
+              transformOrigin: '0 0',
+            }}
           >
-            {/* Drawing Layer - Scrolls with items */}
-            <DrawingCanvas />
+            {/* Drawing SVG strokes - scales with items */}
+            <DrawingSVGLayer />
 
             {filteredNotes.map((note) => (
               <div
@@ -708,8 +898,20 @@ export default function Home() {
                 <Media {...media} />
               </div>
             ))}
+            {filteredReminders.map((reminder) => (
+              <div
+                key={reminder.id}
+                className="pointer-events-auto"
+                data-board-item
+              >
+                <Reminder {...reminder} />
+              </div>
+            ))}
           </div>
         </div>
+
+        {/* Drawing UI Layer — outside zoomed div so position:fixed works correctly */}
+        <DrawingCanvas />
 
         {/* UI Controls Layer - Higher z-index */}
         {/* Full screen: hide everything. Presentation: show only TopBar (collapsed). Normal: show all. */}

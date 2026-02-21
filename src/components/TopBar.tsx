@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { Moon, Sun, Share2, User, ChevronRight, Palette, Layout, LogOut, Minimize2, Maximize2, Building2, Cloud, CloudOff, Loader2, Trash2, Inbox } from 'lucide-react'
+import { Moon, Sun, Share2, User, ChevronRight, Palette, Layout, LogOut, Minimize2, Maximize2, Building2, Cloud, CloudOff, Loader2, Trash2, Inbox, Users, UserPlus, Shield } from 'lucide-react'
 import { useSession, signOut } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import { useThemeStore, THEME_COLORS } from '../store/themeStore'
@@ -10,9 +10,16 @@ import { useBoardStore } from '../store/boardStore'
 import { usePresentationStore } from '../store/presentationStore'
 import { PublishButton } from './delegation/PublishButton'
 import { ActivitySidebar } from './delegation/ActivitySidebar'
-import { OrgManager } from './delegation/OrgManager'
 import { useBoardSyncStore } from '../store/boardSyncStore'
 import { ShareModal } from './BoardSyncControls'
+import { WorkspaceSwitcher } from './workspace/WorkspaceSwitcher'
+import { useWorkspaceStore } from '../store/workspaceStore'
+import { CreateOrgModal } from './workspace/CreateOrgModal'
+import { TeamPanel } from './workspace/TeamPanel'
+import { FriendsPanel } from './workspace/FriendsPanel'
+import { BordAccessModal } from './workspace/BordAccessModal'
+import { useDelegationStore } from '../store/delegationStore'
+import { useOrganizationStore } from '../store/organizationStore'
 
 /** Small badge showing pending tasks assigned TO the current user (employee inbox) */
 function InboxBadge() {
@@ -29,11 +36,12 @@ function InboxBadge() {
         if (!res.ok || cancelled) return
         const data = await res.json()
         const groups = data.tasksByOrganization || []
-        const count = groups.reduce(
+        const orgCount = groups.reduce(
           (sum: number, g: any) => sum + g.tasks.filter((t: any) => t.status === 'assigned').length,
           0
         )
-        if (!cancelled) setPendingCount(count)
+        const personalCount = (data.personalTasks || []).filter((t: any) => t.status === 'assigned').length
+        if (!cancelled) setPendingCount(orgCount + personalCount)
       } catch { /* silent */ }
     }
 
@@ -69,12 +77,15 @@ export function TopBar() {
   const [hoveredProfile, setHoveredProfile] = useState<string | null>(null)
   const [showColorPicker, setShowColorPicker] = useState(false)
   const [showUserMenu, setShowUserMenu] = useState(false)
-  const [showOrgManager, setShowOrgManager] = useState(false)
+  const [showCreateOrg, setShowCreateOrg] = useState(false)
+  const [showTeamPanel, setShowTeamPanel] = useState(false)
+  const [showFriendsPanel, setShowFriendsPanel] = useState(false)
   const [showShareModal, setShowShareModal] = useState(false)
   const [showBoardsTooltip, setShowBoardsTooltip] = useState(false)
   const [showThemeTooltip, setShowThemeTooltip] = useState(false)
   const [showPresentationTooltip, setShowPresentationTooltip] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const [showAccessModal, setShowAccessModal] = useState(false)
   const setGridColor = useGridStore((state) => state.setGridColor)
   const gridColor = useGridStore((state) => state.gridColor)
   const [customGridColor, setCustomGridColor] = useState(gridColor)
@@ -86,6 +97,44 @@ export function TopBar() {
   const { isPresentationMode, togglePresentationMode } = usePresentationStore()
   const { isSyncing, lastSyncedAt, dirtyBoards, syncBoardToCloud } = useBoardSyncStore()
   const currentBoardId = useBoardStore(s => s.currentBoardId)
+  const boardPermission = useBoardSyncStore(s => s.boardPermissions[currentBoardId || ''] || 'owner')
+  const isViewOnly = boardPermission === 'view'
+  const activeContext = useWorkspaceStore(s => s.activeContext)
+  const isOrgContext = activeContext?.type === 'organization'
+
+  // Bord access list — resolve current board's server-side Bord record
+  const bords = useDelegationStore(s => s.bords)
+  const fetchBords = useDelegationStore(s => s.fetchBords)
+  const linkBoardToOrg = useDelegationStore(s => s.linkBoardToOrg)
+  const currentBord = isOrgContext && currentBoardId
+    ? bords.find(b => b.localBoardId === currentBoardId)
+    : null
+  const isOwnerOfCurrentOrg = useOrganizationStore(s => s.isOwnerOfCurrentOrg)
+  const [isLinkingBord, setIsLinkingBord] = useState(false)
+
+  // Fetch bords when switching to org context (needed for access list resolution)
+  useEffect(() => {
+    if (isOrgContext) fetchBords()
+  }, [isOrgContext, fetchBords])
+
+  // Handle access list button — auto-create Bord record if it doesn't exist
+  const handleAccessClick = async () => {
+    if (currentBord) {
+      setShowAccessModal(true)
+      return
+    }
+    // No Bord record yet — create one on the fly
+    if (!currentBoardId || !currentBoard || !activeContext || activeContext.type !== 'organization') return
+    setIsLinkingBord(true)
+    try {
+      const bord = await linkBoardToOrg(activeContext.organizationId, currentBoardId, currentBoard.name)
+      if (bord) {
+        setShowAccessModal(true)
+      }
+    } finally {
+      setIsLinkingBord(false)
+    }
+  }
 
   const handleLogout = async () => {
     clearUserData() // Clear user-specific data before signing out
@@ -241,6 +290,10 @@ export function TopBar() {
                 </div>
               </button>
 
+              {/* Workspace Context Switcher */}
+              <div className={`w-px h-5 ${isDark ? 'bg-zinc-700/75' : 'bg-zinc-200/75'} mx-1`} />
+              <WorkspaceSwitcher onCreateOrg={() => setShowCreateOrg(true)} />
+
               {profileItems.map((item: any) => (
                 <button
                   key={item.id}
@@ -268,8 +321,8 @@ export function TopBar() {
                 </button>
               ))}
 
-              {/* Cloud Sync Button */}
-              {currentBoardId && currentBoard && (
+              {/* Cloud Sync Button — visible for owner and editors */}
+              {currentBoardId && currentBoard && boardPermission !== 'view' && (
                 <button
                   onClick={() => syncBoardToCloud(currentBoardId)}
                   disabled={isSyncing}
@@ -306,8 +359,8 @@ export function TopBar() {
                 </button>
               )}
 
-              {/* Share Button */}
-              {currentBoardId && currentBoard && (
+              {/* Share Button — only for board owner */}
+              {currentBoardId && currentBoard && boardPermission === 'owner' && (
                 <button
                   onClick={() => setShowShareModal(true)}
                   className={`relative p-1.5 rounded-lg transition-colors
@@ -354,7 +407,7 @@ export function TopBar() {
           </button>
         </div>
 
-        {/* Board name + delete - always inline next to controls */}
+        {/* Board name + actions - always inline next to controls */}
         {currentBoard && (
           <div
             className={`flex items-center gap-1.5 px-3 py-2 rounded-xl border shadow-lg backdrop-blur-xl
@@ -368,7 +421,42 @@ export function TopBar() {
             >
               {currentBoard.name}
             </h1>
-            {!isPresentationMode && (
+            {/* Role tag for shared boards */}
+            {isViewOnly && (
+              <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full flex-shrink-0 ${
+                isDark
+                  ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                  : 'bg-amber-100 text-amber-700 border border-amber-200'
+              }`}>
+                VIEWER
+              </span>
+            )}
+            {boardPermission === 'edit' && (
+              <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full flex-shrink-0 ${
+                isDark
+                  ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                  : 'bg-emerald-100 text-emerald-700 border border-emerald-200'
+              }`}>
+                EDITOR
+              </span>
+            )}
+            {!isPresentationMode && isOrgContext && isOwnerOfCurrentOrg && (
+              <button
+                onClick={handleAccessClick}
+                disabled={isLinkingBord}
+                className={`p-1 rounded-md transition-colors flex-shrink-0 ${
+                  isDark
+                    ? 'hover:bg-blue-500/20 text-zinc-500 hover:text-blue-400'
+                    : 'hover:bg-blue-50 text-zinc-400 hover:text-blue-500'
+                } ${isLinkingBord ? 'opacity-50' : ''}`}
+                title="Manage team access"
+              >
+                {isLinkingBord
+                  ? <Loader2 size={13} className="animate-spin" />
+                  : <Shield size={13} />}
+              </button>
+            )}
+            {!isPresentationMode && boardPermission === 'owner' && (
               <button
                 onClick={() => setShowDeleteConfirm(true)}
                 className={`p-1 rounded-md transition-colors flex-shrink-0 ${
@@ -397,7 +485,7 @@ export function TopBar() {
         <div className="relative flex items-center gap-2">
 
           {/* Delegation controls */}
-          <PublishButton />
+          {isOrgContext && <PublishButton />}
           <ActivitySidebar />
           <button
             onClick={() => router.push('/inbox')}
@@ -411,17 +499,32 @@ export function TopBar() {
             <Inbox size={20} />
             <InboxBadge />
           </button>
-          <button
-            onClick={() => setShowOrgManager(true)}
-            className={`p-2 rounded-lg shadow-lg backdrop-blur-sm border
-              ${isDark 
-                ? 'bg-zinc-800/90 border-zinc-700/50 text-zinc-400 hover:text-zinc-200' 
-                : 'bg-white/90 border-zinc-200/50 text-zinc-600 hover:text-zinc-900'}
-              transition-colors`}
-            title="Organization Manager"
-          >
-            <Building2 size={20} />
-          </button>
+          {isOrgContext && (
+            <button
+              onClick={() => setShowTeamPanel(true)}
+              className={`p-2 rounded-lg shadow-lg backdrop-blur-sm border
+                ${isDark 
+                  ? 'bg-zinc-800/90 border-zinc-700/50 text-zinc-400 hover:text-zinc-200' 
+                  : 'bg-white/90 border-zinc-200/50 text-zinc-600 hover:text-zinc-900'}
+                transition-colors`}
+              title="Team"
+            >
+              <Users size={20} />
+            </button>
+          )}
+          {!isOrgContext && (
+            <button
+              onClick={() => setShowFriendsPanel(true)}
+              className={`p-2 rounded-lg shadow-lg backdrop-blur-sm border
+                ${isDark 
+                  ? 'bg-zinc-800/90 border-zinc-700/50 text-zinc-400 hover:text-zinc-200' 
+                  : 'bg-white/90 border-zinc-200/50 text-zinc-600 hover:text-zinc-900'}
+                transition-colors`}
+              title="Friends"
+            >
+              <UserPlus size={20} />
+            </button>
+          )}
 
           <button
             onClick={() => setShowColorPicker(!showColorPicker)}
@@ -538,8 +641,14 @@ export function TopBar() {
       </div>
       )}
 
-      {/* Organization Manager Modal */}
-      <OrgManager isOpen={showOrgManager} onClose={() => setShowOrgManager(false)} />
+      {/* Create Organization Modal */}
+      <CreateOrgModal isOpen={showCreateOrg} onClose={() => setShowCreateOrg(false)} />
+
+      {/* Team Management Panel */}
+      <TeamPanel isOpen={showTeamPanel} onClose={() => setShowTeamPanel(false)} />
+
+      {/* Friends Panel */}
+      <FriendsPanel isOpen={showFriendsPanel} onClose={() => setShowFriendsPanel(false)} />
 
       {/* Share Modal */}
       {showShareModal && currentBoardId && currentBoard && (
@@ -549,6 +658,19 @@ export function TopBar() {
           onClose={() => setShowShareModal(false)}
         />
       )}
+
+      {/* Bord Access Modal */}
+      {showAccessModal && (() => {
+        const bord = currentBord || (currentBoardId ? bords.find(b => b.localBoardId === currentBoardId) : null)
+        return bord ? (
+          <BordAccessModal
+            bordId={bord._id}
+            bordTitle={bord.title}
+            isOpen={showAccessModal}
+            onClose={() => setShowAccessModal(false)}
+          />
+        ) : null
+      })()}
 
       {/* Delete Board Confirmation */}
       {showDeleteConfirm && currentBoard && currentBoardId && (

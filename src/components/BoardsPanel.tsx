@@ -8,12 +8,17 @@ import { useKanbanStore } from '../store/kanbanStore'
 import { useMediaStore } from '../store/mediaStore'
 import { useDrawingStore } from '../store/drawingStore'
 import { useConnectionStore } from '../store/connectionStore'
-import { Trash2, Edit2, Plus, Layout, X, Share2 } from 'lucide-react'
+import { Trash2, Edit2, Plus, Layout, X, Share2, Download, Users } from 'lucide-react'
 import { useState, useRef, useEffect, useMemo } from 'react'
 import { format } from 'date-fns'
 import { useSession } from 'next-auth/react'
 import { SyncButton, ShareModal } from './BoardSyncControls'
 import { useBoardSyncStore } from '../store/boardSyncStore'
+import { useWorkspaceStore } from '../store/workspaceStore'
+import { useZIndexStore } from '../store/zIndexStore'
+import { useDelegationStore } from '../store/delegationStore'
+import type { BordDTO } from '../types/delegation'
+
 
 interface BoardsPanelProps {
   isOpen: boolean
@@ -26,10 +31,30 @@ export function BoardsPanel({ isOpen, onClose }: BoardsPanelProps) {
   const { currentBoardId, addBoard, deleteBoard, setCurrentBoard, updateBoard } = useBoardStore()
   const currentUserId = useBoardStore((state) => state.currentUserId)
   const allBoards = useBoardStore((state) => state.boards)
-  const userBoards = useMemo(() => 
-    allBoards.filter(b => b.userId === currentUserId),
-    [allBoards, currentUserId]
-  )
+  const activeContext = useWorkspaceStore((s) => s.activeContext)
+  const bords = useDelegationStore((s) => s.bords)
+  const fetchBords = useDelegationStore((s) => s.fetchBords)
+  const isOrgContext = activeContext?.type === 'organization'
+
+  // Filter boards by active workspace context
+  const userBoards = useMemo(() => {
+    const owned = allBoards.filter(b => b.userId === currentUserId)
+    if (!activeContext) return owned
+    if (activeContext.type === 'organization') {
+      return owned.filter(b => b.contextType === 'organization' && b.organizationId === activeContext.organizationId)
+    }
+    // Personal context: show boards with no org or explicitly personal
+    return owned.filter(b => !b.contextType || b.contextType === 'personal')
+  }, [allBoards, currentUserId, activeContext])
+
+  // Accessible bords from other owners in this org (via accessList)
+  const accessibleBords = useMemo(() => {
+    if (!isOrgContext || !activeContext || activeContext.type !== 'organization') return []
+    return bords.filter(b =>
+      b.organizationId === activeContext.organizationId &&
+      b.role === 'member'
+    )
+  }, [bords, isOrgContext, activeContext])
   
   // Get delete functions from all stores
   const { deleteNote } = useNoteStore()
@@ -46,6 +71,7 @@ export function BoardsPanel({ isOpen, onClose }: BoardsPanelProps) {
   const [editingBoardId, setEditingBoardId] = useState<string | null>(null)
   const [editingBoardName, setEditingBoardName] = useState('')
   const [sharingBoardId, setSharingBoardId] = useState<string | null>(null)
+  const [loadingBordId, setLoadingBordId] = useState<string | null>(null)
   const panelRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -61,6 +87,11 @@ export function BoardsPanel({ isOpen, onClose }: BoardsPanelProps) {
 
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [isOpen, onClose])
+
+  // Fetch bords when panel opens in org context
+  useEffect(() => {
+    if (isOpen && isOrgContext) fetchBords()
+  }, [isOpen, isOrgContext, fetchBords])
 
   // Listen for board deletion to cleanup associated items
   useEffect(() => {
@@ -87,6 +118,10 @@ export function BoardsPanel({ isOpen, onClose }: BoardsPanelProps) {
       
       // Delete all drawings
       drawingIds.forEach((id: string) => deleteDrawing(id))
+
+      // Clean up zIndex entries for deleted items
+      const allDeletedIds = [...noteIds, ...checklistIds, ...textIds, ...kanbanIds, ...mediaIds, ...drawingIds]
+      allDeletedIds.forEach((id: string) => useZIndexStore.getState().removeItem(id))
     }
     
     window.addEventListener('boardDeleted', handleBoardDeleted as EventListener)
@@ -96,7 +131,13 @@ export function BoardsPanel({ isOpen, onClose }: BoardsPanelProps) {
   const handleCreateBoard = () => {
     if (!newBoardName.trim() || !session?.user?.email) return
     
-    addBoard(newBoardName, session.user.email)
+    // Tag the board with the active workspace context
+    const ctx = useWorkspaceStore.getState().activeContext
+    const context = ctx?.type === 'organization'
+      ? { contextType: 'organization' as const, organizationId: ctx.organizationId }
+      : { contextType: 'personal' as const }
+
+    addBoard(newBoardName, session.user.email, context)
     setNewBoardName('')
     setIsCreating(false)
   }
@@ -104,6 +145,31 @@ export function BoardsPanel({ isOpen, onClose }: BoardsPanelProps) {
   const handleBoardSelect = (boardId: string) => {
     setCurrentBoard(boardId)
     onClose()
+  }
+
+  const handleAccessibleBordSelect = async (bord: BordDTO) => {
+    // Check if already loaded locally
+    const existingBoard = allBoards.find(b => b.id === bord.localBoardId)
+    if (existingBoard) {
+      setCurrentBoard(bord.localBoardId)
+      onClose()
+      return
+    }
+
+    // Pull from cloud
+    setLoadingBordId(bord._id)
+    try {
+      await useBoardSyncStore.getState().loadBoardFromCloud(bord.localBoardId)
+      // Tag with org context so it shows in the correct workspace
+      updateBoard(bord.localBoardId, {
+        contextType: 'organization',
+        organizationId: bord.organizationId,
+      })
+      setCurrentBoard(bord.localBoardId)
+      onClose()
+    } finally {
+      setLoadingBordId(null)
+    }
   }
 
   return (
@@ -123,7 +189,7 @@ export function BoardsPanel({ isOpen, onClose }: BoardsPanelProps) {
       <div className="p-4 pb-2">
         <div className="flex justify-between items-center mb-4">
           <h2 className={`text-lg font-semibold ${isDark ? 'text-white' : 'text-gray-800'}`}>
-            My Boards
+            {activeContext?.type === 'organization' ? activeContext.organizationName : 'My'} Boards
           </h2>
           <button
             onClick={onClose}
@@ -192,11 +258,13 @@ export function BoardsPanel({ isOpen, onClose }: BoardsPanelProps) {
       {/* Scrollable Boards List */}
       <div className="flex-1 overflow-y-auto px-4 pb-4">
         <div className="space-y-2">
-          {userBoards.length === 0 && (
+          {userBoards.length === 0 && accessibleBords.length === 0 && (
             <div className={`text-center py-8 ${isDark ? 'text-zinc-500' : 'text-gray-400'}`}>
               <Layout size={32} className="mx-auto mb-2 opacity-50" />
               <p className="text-sm">No boards yet</p>
-              <p className="text-xs mt-1">Create your first board to get started</p>
+              <p className="text-xs mt-1">
+                {isOrgContext ? 'Create a board or ask the owner for access' : 'Create your first board to get started'}
+              </p>
             </div>
           )}
           {userBoards.map((board) => (
@@ -289,6 +357,71 @@ export function BoardsPanel({ isOpen, onClose }: BoardsPanelProps) {
             </div>
           ))}
         </div>
+
+        {/* Accessible Bords (via accessList — org members only) */}
+        {isOrgContext && accessibleBords.length > 0 && (
+          <div className="mt-4">
+            <div className={`flex items-center gap-2 mb-2 px-1 ${isDark ? 'text-zinc-400' : 'text-gray-500'}`}>
+              <Users size={14} />
+              <span className="text-xs font-medium uppercase tracking-wide">Shared with you</span>
+            </div>
+            <div className="space-y-2">
+              {accessibleBords.map((bord) => {
+                const isLoadedLocally = allBoards.some(b => b.id === bord.localBoardId)
+                const isActive = currentBoardId === bord.localBoardId
+                const isLoading = loadingBordId === bord._id
+
+                return (
+                  <div
+                    key={bord._id}
+                    className={`
+                      p-3 rounded-lg flex items-center justify-between group
+                      ${isActive
+                        ? isDark ? 'bg-blue-500/20 text-blue-400' : 'bg-blue-50 text-blue-600'
+                        : isDark ? 'hover:bg-zinc-700/50' : 'hover:bg-gray-50'
+                      }
+                      ${isDark ? 'text-white' : 'text-gray-700'}
+                      cursor-pointer
+                    `}
+                    onClick={() => !isLoading && handleAccessibleBordSelect(bord)}
+                  >
+                    <div className="flex items-center gap-3 flex-1 min-w-0">
+                      <Layout size={16} className="shrink-0" />
+                      <div className="min-w-0 flex-1">
+                        <div className="font-medium truncate">{bord.title}</div>
+                        <div className="text-xs opacity-60">
+                          {isLoadedLocally ? 'Synced' : 'Available to pull'}
+                        </div>
+                      </div>
+                    </div>
+                    {!isLoadedLocally && (
+                      <div className="flex items-center">
+                        {isLoading ? (
+                          <div className={`p-1.5 ${isDark ? 'text-zinc-400' : 'text-gray-500'}`}>
+                            <div className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                          </div>
+                        ) : (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              handleAccessibleBordSelect(bord)
+                            }}
+                            className={`p-1.5 rounded-lg transition-colors ${
+                              isDark ? 'hover:bg-zinc-600 text-zinc-400' : 'hover:bg-gray-200 text-gray-500'
+                            }`}
+                            title="Pull board from cloud"
+                          >
+                            <Download size={14} />
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Delete Confirmation Modal */}

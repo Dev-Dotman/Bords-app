@@ -11,6 +11,11 @@ export interface INotification {
     | 'task_updated'
     | 'org_invitation'
     | 'invitation_accepted'
+    | 'friend_request'
+    | 'friend_accepted'
+    | 'friend_removed'
+    | 'reminder_due'
+    | 'reminder_overdue'
   title: string
   message: string
   metadata: {
@@ -20,6 +25,8 @@ export interface INotification {
     organizationId?: string
     organizationName?: string
     invitationId?: string
+    friendId?: string
+    senderName?: string
     sourceType?: string
     sourceId?: string
   }
@@ -45,6 +52,11 @@ const NotificationSchema = new Schema<INotification>(
         'task_updated',
         'org_invitation',
         'invitation_accepted',
+        'friend_request',
+        'friend_accepted',
+        'friend_removed',
+        'reminder_due',
+        'reminder_overdue',
       ],
       required: true,
     },
@@ -63,6 +75,8 @@ const NotificationSchema = new Schema<INotification>(
       organizationId: String,
       organizationName: String,
       invitationId: String,
+      friendId: String,
+      senderName: String,
       sourceType: String,
       sourceId: String,
     },

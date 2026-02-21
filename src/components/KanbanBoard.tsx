@@ -10,12 +10,15 @@ import { useBoardStore } from '../store/boardStore'
 import { ConnectionNode } from './ConnectionNode'
 import type { KanbanBoard as KanbanBoardType, KanbanTask } from '../types/kanban'
 import { useZIndexStore } from '../store/zIndexStore'
+import { useGridStore } from '../store/gridStore'
 import { DeleteConfirmModal } from './DeleteConfirmModal'
 import { ColorPicker } from './ColorPicker'
 import { AssignButton } from './delegation/AssignButton'
 import { useDelegationStore } from '../store/delegationStore'
 import { useViewportScale } from '../hooks/useViewportScale'
 import { AddTaskModal } from './AddTaskModal'
+import { watchDeadlines } from '../lib/reminders'
+import { useBoardSyncStore } from '../store/boardSyncStore'
 
 interface KanbanBoardProps {
   board: KanbanBoardType
@@ -39,6 +42,9 @@ function isOverdue(dateStr: string): boolean {
 
 export function KanbanBoard({ board }: KanbanBoardProps) {
   const isDragEnabled = useDragModeStore((s) => s.isDragEnabled)
+  const currentBoardId = useBoardStore((s) => s.currentBoardId)
+  const boardPermission = useBoardSyncStore((s) => s.boardPermissions[currentBoardId || ''] || 'owner')
+  const isViewOnly = boardPermission === 'view'
   const {
     updateBoardColor,
     updateBoardTitle,
@@ -185,8 +191,9 @@ export function KanbanBoard({ board }: KanbanBoardProps) {
     (e: React.PointerEvent, task: KanbanTask, columnId: string) => {
       // Only primary button (left click / stylus tip / touch)
       if (e.button !== 0) return
-      // Don't drag if editing
+      // Don't drag if editing or view-only
       if (editingTaskData?.taskId === task.id) return
+      if (isViewOnly) return
       e.stopPropagation()
       e.preventDefault()
 
@@ -383,9 +390,35 @@ export function KanbanBoard({ board }: KanbanBoardProps) {
     setEditingTaskData(null)
   }
 
+  // ── Watch kanban task deadlines for automatic reminders ──
+  useEffect(() => {
+    const allTasks = board.columns.flatMap((col) =>
+      col.tasks
+        .filter((t) => t.dueDate && !t.completed)
+        .map((t) => ({
+          itemId: t.id,
+          text: t.title,
+          deadline: new Date(t.dueDate + 'T00:00:00'),
+          completed: t.completed ?? false,
+        }))
+    )
+
+    if (allTasks.length === 0) return
+
+    return watchDeadlines({
+      watchId: `kanban-${board.id}`,
+      source: 'kanban',
+      title: board.title,
+      items: allTasks,
+    })
+  }, [board.columns, board.title, board.id])
+
   // ── style ────────────────────────────────────────────────────
+  const zoom = useGridStore((s) => s.zoom)
+  const zoomedTransform = transform ? { ...transform, x: transform.x / zoom, y: transform.y / zoom } : null
+
   const style = {
-    transform: CSS.Translate.toString(transform),
+    transform: CSS.Translate.toString(zoomedTransform),
     position: 'absolute' as const,
     left: board.position.x,
     top: board.position.y,
@@ -500,17 +533,18 @@ export function KanbanBoard({ board }: KanbanBoardProps) {
                     className="font-semibold text-lg cursor-pointer hover:bg-white/30 rounded-lg px-2 py-1 transition-colors truncate text-gray-800"
                     onDoubleClick={(e) => {
                       e.stopPropagation()
+                      if (isViewOnly) return
                       setEditTitle(board.title)
                       setIsEditingTitle(true)
                     }}
-                    title="Double-click to rename"
+                    title={isViewOnly ? board.title : "Double-click to rename"}
                   >
                     {board.title}
                   </h3>
                 )}
               </div>
 
-              <div className="flex items-center gap-1 shrink-0">
+              {!isViewOnly && <div className="flex items-center gap-1 shrink-0">
                 <button
                   ref={colorBtnRef}
                   onClick={(e) => {
@@ -540,7 +574,7 @@ export function KanbanBoard({ board }: KanbanBoardProps) {
                     className="text-gray-400 group-hover:text-red-500 transition-colors"
                   />
                 </button>
-              </div>
+              </div>}
 
               {/* Color picker dropdown */}
               {showColorPicker && (
@@ -622,10 +656,11 @@ export function KanbanBoard({ board }: KanbanBoardProps) {
                           className="font-semibold text-sm cursor-pointer rounded px-1 py-0.5 transition-colors truncate text-gray-800 hover:bg-white/60"
                           onDoubleClick={(e) => {
                             e.stopPropagation()
+                            if (isViewOnly) return
                             setEditColumnTitle(column.title)
                             setEditingColumnId(column.id)
                           }}
-                          title="Double-click to rename"
+                          title={isViewOnly ? column.title : "Double-click to rename"}
                         >
                           {column.title}
                         </h4>
@@ -636,7 +671,7 @@ export function KanbanBoard({ board }: KanbanBoardProps) {
                         {column.tasks.length}
                       </span>
                     </div>
-                    <button
+                    {!isViewOnly && <button
                       onClick={(e) => {
                         e.stopPropagation()
                         setColumnToDelete(column.id)
@@ -648,7 +683,7 @@ export function KanbanBoard({ board }: KanbanBoardProps) {
                         size={14}
                         className="text-gray-400 group-hover:text-red-500 transition-colors"
                       />
-                    </button>
+                    </button>}
                   </div>
 
                   {/* Scrollable task list */}
@@ -818,6 +853,7 @@ export function KanbanBoard({ board }: KanbanBoardProps) {
                                 className={`font-medium text-sm flex-1 cursor-pointer text-gray-800 ${task.completed ? 'line-through opacity-60' : ''}`}
                                 onDoubleClick={(e) => {
                                   e.stopPropagation()
+                                  if (isViewOnly) return
                                   setEditingTaskData({
                                     columnId: column.id,
                                     taskId: task.id,
@@ -827,11 +863,11 @@ export function KanbanBoard({ board }: KanbanBoardProps) {
                                     dueDate: task.dueDate || '',
                                   })
                                 }}
-                                title="Double-click to edit"
+                                title={isViewOnly ? task.title : "Double-click to edit"}
                               >
                                 {task.title}
                               </h5>
-                              <div
+                              {!isViewOnly && <div
                                 className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-all"
                                 onPointerDown={(e) => e.stopPropagation()}
                               >
@@ -861,7 +897,7 @@ export function KanbanBoard({ board }: KanbanBoardProps) {
                                     className="text-gray-400 hover:text-red-500 transition-colors"
                                   />
                                 </button>
-                              </div>
+                              </div>}
                             </div>
                             {task.description && (
                               <p
@@ -932,7 +968,7 @@ export function KanbanBoard({ board }: KanbanBoardProps) {
                   </div>
 
                   {/* Add task — pinned at column bottom */}
-                  <div className="p-3 pt-2 shrink-0">
+                  {!isViewOnly && <div className="p-3 pt-2 shrink-0">
                     <button
                       onClick={(e) => {
                         e.stopPropagation()
@@ -944,12 +980,12 @@ export function KanbanBoard({ board }: KanbanBoardProps) {
                       <Plus size={16} />
                       <span className="text-xs font-medium">Add task</span>
                     </button>
-                  </div>
+                  </div>}
                 </div>
               ))}
 
               {/* ═══════  ADD COLUMN — inline as last item  ═══════ */}
-              <div
+              {!isViewOnly && <div
                 className="shrink-0 flex items-start"
                 style={{ width: `${Math.round(240 * vScale)}px` }}
               >
@@ -1012,7 +1048,7 @@ export function KanbanBoard({ board }: KanbanBoardProps) {
                     <span className="text-sm font-medium">Add Column</span>
                   </button>
                 )}
-              </div>
+              </div>}
             </div>
           </div>
         </Resizable>
@@ -1024,6 +1060,7 @@ export function KanbanBoard({ board }: KanbanBoardProps) {
         onConfirm={() => {
           removeConnectionsByItemId(board.id)
           removeBoard(board.id)
+          useZIndexStore.getState().removeItem(board.id)
           setShowDeleteConfirm(false)
         }}
         onCancel={() => setShowDeleteConfirm(false)}

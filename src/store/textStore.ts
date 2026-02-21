@@ -7,7 +7,8 @@ export interface TextElement {
   position: { x: number; y: number }
   fontSize: number
   color: string
-  rotation?: number // Add rotation property
+  rotation?: number
+  width?: number
 }
 
 interface TextStore {

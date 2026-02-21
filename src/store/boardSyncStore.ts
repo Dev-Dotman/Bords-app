@@ -13,6 +13,7 @@ import { useConnectionLineStore } from './connectionLineStore'
 import { useGridStore } from './gridStore'
 import { useThemeStore } from './themeStore'
 import { useZIndexStore } from './zIndexStore'
+import { useReminderStore } from './reminderStore'
 
 /* ─────────────────────── Types ─────────────────────── */
 
@@ -45,6 +46,7 @@ interface BoardSyncStore {
   staleBoards: Set<string>                // boards with newer cloud versions
   deletedBoardIds: Set<string>            // boards deleted locally — skip on re-import
   cloudBoards: CloudBoardMeta[]
+  boardPermissions: Record<string, 'owner' | 'view' | 'edit'>  // localBoardId → permission
   error: string | null
 
   // Core sync actions
@@ -61,6 +63,10 @@ interface BoardSyncStore {
   checkForStaleBoards: () => Promise<void>   // Tab-focus check (no auto-apply)
   refreshStaleBoards: () => Promise<void>    // User-triggered: pull stale boards
   dismissStale: (localBoardId: string) => void
+
+  // Permission
+  setBoardPermission: (localBoardId: string, permission: 'owner' | 'view' | 'edit') => void
+  getCurrentBoardPermission: () => 'owner' | 'view' | 'edit'
 
   // Share actions
   getShareSettings: (localBoardId: string) => Promise<{ visibility: string; shareToken: string | null; sharedWith: ShareEntry[] } | null>
@@ -93,6 +99,7 @@ function computeHash(localBoardId: string): string {
   const drawingStore = useDrawingStore.getState()
   const commentStore = useCommentStore.getState()
   const connectionStore = useConnectionStore.getState()
+  const reminderStore = useReminderStore.getState()
   const connectionLineStore = useConnectionLineStore.getState()
   const gridStore = useGridStore.getState()
   const themeStore = useThemeStore.getState()
@@ -106,10 +113,12 @@ function computeHash(localBoardId: string): string {
   const drawings = drawingStore.drawings.filter((d: any) => board.drawings.includes(d.id))
   const comments = commentStore.comments.filter((c: any) => c.boardId === localBoardId)
   const connections = connectionStore.connections.filter((c: any) => c.boardId === localBoardId)
+  const reminders = reminderStore.reminders.filter((r: any) => (board.reminders || []).includes(r.id))
 
   const allItemIds = new Set([
     ...board.notes, ...board.checklists, ...board.texts,
     ...board.kanbans, ...board.medias, ...board.drawings,
+    ...(board.reminders || []),
   ])
   const zEntries = Object.entries(zIndexStore.zIndexMap)
     .filter(([id]) => allItemIds.has(id))
@@ -117,11 +126,12 @@ function computeHash(localBoardId: string): string {
 
   // Build a deterministic string of all content
   const payload = JSON.stringify({
-    checklists, kanbans, notes, medias, texts, drawings, comments, connections,
+    checklists, kanbans, notes, medias, texts, drawings, comments, connections, reminders,
     itemIds: {
       notes: board.notes, checklists: board.checklists, texts: board.texts,
       connections: board.connections, drawings: board.drawings,
       kanbans: board.kanbans, medias: board.medias,
+      reminders: board.reminders || [],
     },
     bg: [board.backgroundImage, board.backgroundColor, board.backgroundOverlay,
          board.backgroundOverlayColor, board.backgroundBlurLevel],
@@ -152,6 +162,7 @@ function gatherBoardData(localBoardId: string) {
   const drawingStore = useDrawingStore.getState()
   const commentStore = useCommentStore.getState()
   const connectionStore = useConnectionStore.getState()
+  const reminderStore = useReminderStore.getState()
   const connectionLineStore = useConnectionLineStore.getState()
   const gridStore = useGridStore.getState()
   const themeStore = useThemeStore.getState()
@@ -166,11 +177,13 @@ function gatherBoardData(localBoardId: string) {
   const drawings = drawingStore.drawings.filter((d: any) => board.drawings.includes(d.id))
   const comments = commentStore.comments.filter((c: any) => c.boardId === localBoardId)
   const connections = connectionStore.connections.filter((c: any) => c.boardId === localBoardId)
+  const reminders = reminderStore.reminders.filter((r: any) => (board.reminders || []).includes(r.id))
 
   // Z-index data: only entries for items in this board
   const allItemIds = new Set([
     ...board.notes, ...board.checklists, ...board.texts,
     ...board.kanbans, ...board.medias, ...board.drawings,
+    ...(board.reminders || []),
   ])
   const zEntries = Object.entries(zIndexStore.zIndexMap)
     .filter(([id]) => allItemIds.has(id))
@@ -190,6 +203,7 @@ function gatherBoardData(localBoardId: string) {
     drawings,
     comments,
     connections,
+    reminders,
     connectionLineSettings: {
       colorMode: connectionLineStore.colorMode,
       monochromaticColor: connectionLineStore.monochromaticColor,
@@ -217,13 +231,14 @@ function gatherBoardData(localBoardId: string) {
       drawings: board.drawings,
       kanbans: board.kanbans,
       medias: board.medias,
+      reminders: board.reminders || [],
     },
   }
 }
 
 /* ─────────────── Helper: apply cloud data to local stores ─────────────── */
 
-function applyCloudData(localBoardId: string, cloud: any) {
+function applyCloudData(localBoardId: string, cloud: any, opts?: { skipTheme?: boolean }) {
   const boardStore = useBoardStore.getState()
   const checklistStore = useChecklistStore.getState()
   const kanbanStore = useKanbanStore.getState()
@@ -233,6 +248,7 @@ function applyCloudData(localBoardId: string, cloud: any) {
   const drawingStore = useDrawingStore.getState()
   const commentStore = useCommentStore.getState()
   const connectionStore = useConnectionStore.getState()
+  const reminderStore = useReminderStore.getState()
   const connectionLineStore = useConnectionLineStore.getState()
   const gridStore = useGridStore.getState()
   const themeStore = useThemeStore.getState()
@@ -255,6 +271,7 @@ function applyCloudData(localBoardId: string, cloud: any) {
       drawings: cloud.itemIds?.drawings || [],
       kanbans: cloud.itemIds?.kanbans || [],
       medias: cloud.itemIds?.medias || [],
+      reminders: cloud.itemIds?.reminders || [],
       backgroundImage: cloud.backgroundImage || undefined,
       backgroundColor: cloud.backgroundColor || undefined,
       backgroundOverlay: cloud.backgroundOverlay || undefined,
@@ -274,6 +291,7 @@ function applyCloudData(localBoardId: string, cloud: any) {
       drawings: cloud.itemIds?.drawings || board.drawings,
       kanbans: cloud.itemIds?.kanbans || board.kanbans,
       medias: cloud.itemIds?.medias || board.medias,
+      reminders: cloud.itemIds?.reminders || board.reminders || [],
       backgroundImage: cloud.backgroundImage || undefined,
       backgroundColor: cloud.backgroundColor || undefined,
       backgroundOverlay: cloud.backgroundOverlay ?? undefined,
@@ -338,6 +356,13 @@ function applyCloudData(localBoardId: string, cloud: any) {
     useConnectionStore.setState({ connections: [...otherConnections, ...cloud.connections] })
   }
 
+  // Reminders
+  if (cloud.reminders) {
+    const boardReminderIds = new Set(cloud.itemIds?.reminders || [])
+    const otherReminders = reminderStore.reminders.filter((r: any) => !boardReminderIds.has(r.id))
+    useReminderStore.setState({ reminders: [...otherReminders, ...cloud.reminders] })
+  }
+
   // Connection line settings
   if (cloud.connectionLineSettings) {
     connectionLineStore.setColorMode(cloud.connectionLineSettings.colorMode)
@@ -353,8 +378,8 @@ function applyCloudData(localBoardId: string, cloud: any) {
     gridStore.setZoom(cloud.gridSettings.zoom)
   }
 
-  // Theme settings
-  if (cloud.themeSettings) {
+  // Theme settings — skip for shared boards so viewers keep their own theme
+  if (cloud.themeSettings && !opts?.skipTheme) {
     if (cloud.themeSettings.isDark !== themeStore.isDark) themeStore.toggleDark()
     themeStore.setColorTheme(cloud.themeSettings.colorTheme)
   }
@@ -370,6 +395,82 @@ function applyCloudData(localBoardId: string, cloud: any) {
       zIndexMap: newMap,
     })
   }
+
+  // Schedule connection line rewire after DOM renders the loaded items
+  if (typeof window !== 'undefined' && cloud.connections?.length) {
+    setTimeout(() => {
+      try {
+        const { scheduleConnectionUpdate } = require('../components/Connections')
+        scheduleConnectionUpdate()
+        // Second pass after layout settles (items may animate into position)
+        setTimeout(() => scheduleConnectionUpdate(), 300)
+      } catch { /* Connections component not mounted yet */ }
+    }, 100)
+  }
+}
+
+/* ─── Helper: purge all local data for a board (access revoked / deleted) ─── */
+
+function purgeLocalBoard(localBoardId: string) {
+  const boardStore = useBoardStore.getState()
+  const board = boardStore.boards.find((b: any) => b.id === localBoardId)
+  if (!board) return
+
+  // Remove items from individual stores
+  const checklistStore = useChecklistStore.getState()
+  const kanbanStore = useKanbanStore.getState()
+  const stickyStore = useNoteStore.getState()
+  const mediaStore = useMediaStore.getState()
+  const textStore = useTextStore.getState()
+  const drawingStore = useDrawingStore.getState()
+  const commentStore = useCommentStore.getState()
+  const connectionStore = useConnectionStore.getState()
+  const reminderStore = useReminderStore.getState()
+  const zIndexStore = useZIndexStore.getState()
+
+  const noteIds = new Set(board.notes || [])
+  const checklistIds = new Set(board.checklists || [])
+  const textIds = new Set(board.texts || [])
+  const kanbanIds = new Set(board.kanbans || [])
+  const mediaIds = new Set(board.medias || [])
+  const drawingIds = new Set(board.drawings || [])
+  const reminderIds = new Set(board.reminders || [])
+
+  useNoteStore.setState({ notes: stickyStore.notes.filter((n: any) => !noteIds.has(n.id)) })
+  useChecklistStore.setState({ checklists: checklistStore.checklists.filter((c: any) => !checklistIds.has(c.id)) })
+  useTextStore.setState({ texts: textStore.texts.filter((t: any) => !textIds.has(t.id)) })
+  useKanbanStore.setState({ boards: kanbanStore.boards.filter((k: any) => !kanbanIds.has(k.id)) })
+  useMediaStore.setState({ medias: mediaStore.medias.filter((m: any) => !mediaIds.has(m.id)) })
+  useDrawingStore.setState({ drawings: drawingStore.drawings.filter((d: any) => !drawingIds.has(d.id)) })
+  useReminderStore.setState({ reminders: reminderStore.reminders.filter((r: any) => !reminderIds.has(r.id)) })
+  useCommentStore.setState({ comments: commentStore.comments.filter((c: any) => c.boardId !== localBoardId) })
+  useConnectionStore.setState({ connections: connectionStore.connections.filter((c: any) => c.boardId !== localBoardId) })
+
+  // Clean up z-index entries
+  const allItemIds = [...noteIds, ...checklistIds, ...textIds, ...kanbanIds, ...mediaIds, ...drawingIds, ...reminderIds]
+  const newZMap = { ...zIndexStore.zIndexMap }
+  for (const id of allItemIds) newZMap[id] && delete newZMap[id]
+  useZIndexStore.setState({ zIndexMap: newZMap })
+
+  // Remove the board itself; switch to a board from the same context
+  const currentId = boardStore.currentBoardId
+  const remaining = boardStore.boards.filter((b: any) => b.id !== localBoardId)
+
+  let nextBoardId: string | null = currentId === localBoardId ? null : currentId
+  if (currentId === localBoardId && remaining.length > 0 && board) {
+    const sameContext = remaining.filter((b: any) => {
+      if (board.contextType === 'organization') {
+        return b.contextType === 'organization' && b.organizationId === board.organizationId
+      }
+      return !b.contextType || b.contextType === 'personal'
+    })
+    nextBoardId = sameContext.length > 0 ? sameContext[0].id : null
+  }
+
+  useBoardStore.setState({
+    boards: remaining,
+    currentBoardId: nextBoardId,
+  })
 }
 
 /* ─────────────────────── Store ─────────────────────── */
@@ -384,7 +485,21 @@ export const useBoardSyncStore = create<BoardSyncStore>()((set, get) => ({
   staleBoards: new Set<string>(),
   deletedBoardIds: new Set<string>(),
   cloudBoards: [],
+  boardPermissions: {},
   error: null,
+
+  /* ── Permission helpers ── */
+  setBoardPermission: (localBoardId, permission) => {
+    set(s => ({
+      boardPermissions: { ...s.boardPermissions, [localBoardId]: permission },
+    }))
+  },
+
+  getCurrentBoardPermission: () => {
+    const currentBoardId = useBoardStore.getState().currentBoardId
+    if (!currentBoardId) return 'owner'
+    return get().boardPermissions[currentBoardId] || 'owner'
+  },
 
   /* ── Push to cloud ── */
   syncBoardToCloud: async (localBoardId: string) => {
@@ -401,6 +516,26 @@ export const useBoardSyncStore = create<BoardSyncStore>()((set, get) => ({
       const boardData = gatherBoardData(localBoardId)
       if (!boardData) throw new Error('Could not gather board data')
 
+      // Resolve workspace context for the sync payload
+      let workspacePayload: Record<string, any> = {}
+      try {
+        const { useWorkspaceStore } = await import('./workspaceStore')
+        const ws = useWorkspaceStore.getState()
+        const ctx = ws.activeContext
+        if (ctx && ctx.type === 'organization') {
+          workspacePayload = {
+            organizationId: ctx.organizationId,
+            contextType: 'organization',
+            workspaceId: ws.orgContainerWorkspace?._id || undefined,
+          }
+        } else {
+          workspacePayload = {
+            contextType: 'personal',
+            workspaceId: ws.personalWorkspace?._id || undefined,
+          }
+        }
+      } catch { /* workspace store not ready — personal fallback */ }
+
       const res = await fetch('/api/boards/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -408,6 +543,7 @@ export const useBoardSyncStore = create<BoardSyncStore>()((set, get) => ({
           localBoardId,
           name: board.name,
           board: boardData,
+          ...workspacePayload,
         }),
       })
 
@@ -425,6 +561,19 @@ export const useBoardSyncStore = create<BoardSyncStore>()((set, get) => ({
         contentHashes: { ...s.contentHashes, [localBoardId]: data.contentHash || '' },
         dirtyBoards: newDirty,
       }))
+
+      // Auto-create Bord record for org boards (enables access list management)
+      if (workspacePayload.contextType === 'organization' && workspacePayload.organizationId) {
+        try {
+          const { useDelegationStore } = await import('./delegationStore')
+          const delegation = useDelegationStore.getState()
+          const existingBord = delegation.bords.find(b => b.localBoardId === localBoardId)
+          if (!existingBord) {
+            await delegation.linkBoardToOrg(workspacePayload.organizationId, localBoardId, board.name)
+          }
+        } catch { /* delegation store not ready — skip */ }
+      }
+
       toast.success('Board synced to cloud')
     } catch (error: any) {
       set({ isSyncing: false, error: error.message })
@@ -443,8 +592,16 @@ export const useBoardSyncStore = create<BoardSyncStore>()((set, get) => ({
         throw new Error(err.error || 'Failed to load')
       }
 
-      const { board } = await res.json()
-      applyCloudData(localBoardId, board)
+      const { board, permission } = await res.json()
+      const perm = permission || 'owner'
+      
+      // Track permission for this board
+      set(s => ({
+        boardPermissions: { ...s.boardPermissions, [localBoardId]: perm },
+      }))
+
+      // Skip theme sync for shared boards (non-owner) so viewers keep their own theme
+      applyCloudData(localBoardId, board, { skipTheme: perm !== 'owner' })
 
       set(s => ({
         isSyncing: false,
@@ -554,6 +711,34 @@ export const useBoardSyncStore = create<BoardSyncStore>()((set, get) => ({
         }
       }
 
+      // Track permissions from check API for ALL boards (including non-fetched ones)
+      const newPermissions = { ...get().boardPermissions }
+      for (const entry of cloudHashes) {
+        if (entry.localBoardId) {
+          newPermissions[entry.localBoardId] = entry.permission || 'owner'
+        }
+      }
+      set({ boardPermissions: newPermissions })
+
+      // ── Purge local boards whose cloud access was revoked or deleted ──
+      // Any board with a stored non-owner permission that no longer appears
+      // in the cloud list should be removed locally.
+      const cloudBoardIds = new Set(cloudHashes.map((h: any) => h.localBoardId).filter(Boolean))
+      const prevPermissions = get().boardPermissions
+      for (const [boardId, perm] of Object.entries(prevPermissions)) {
+        if (perm === 'owner') continue // owner boards are managed separately
+        if (!cloudBoardIds.has(boardId)) {
+          // Access revoked or board deleted — purge local copy
+          purgeLocalBoard(boardId)
+          // Clean up permission + sync metadata
+          const perms = { ...get().boardPermissions }
+          delete perms[boardId]
+          const hashes = { ...get().contentHashes }
+          delete hashes[boardId]
+          set({ boardPermissions: perms, contentHashes: hashes })
+        }
+      }
+
       if (boardsToFetch.length === 0) {
         // Everything is up to date — update metadata only
         const all: CloudBoardMeta[] = cloudHashes.map((h: any) => ({
@@ -578,8 +763,10 @@ export const useBoardSyncStore = create<BoardSyncStore>()((set, get) => ({
           const res = await fetch(`/api/boards/sync/${localBoardId}`)
           if (!res.ok) continue
 
-          const { board } = await res.json()
-          applyCloudData(localBoardId, board)
+          const { board, permission } = await res.json()
+          const perm = permission || newPermissions[localBoardId] || 'owner'
+          newPermissions[localBoardId] = perm
+          applyCloudData(localBoardId, board, { skipTheme: perm !== 'owner' })
           loadedCount++
 
           // Store the cloud hash so we don't re-fetch next time
@@ -592,7 +779,7 @@ export const useBoardSyncStore = create<BoardSyncStore>()((set, get) => ({
         }
       }
 
-      set({ contentHashes: newHashes })
+      set({ contentHashes: newHashes, boardPermissions: newPermissions })
 
       // Update cloud boards metadata
       const all: CloudBoardMeta[] = cloudHashes.map((h: any) => ({
@@ -729,6 +916,21 @@ export const useBoardSyncStore = create<BoardSyncStore>()((set, get) => ({
         set({ staleBoards: newStale })
       }
 
+      // ── Purge local boards whose cloud access was revoked or deleted ──
+      const cloudBoardIds = new Set(cloudEntries.map((h: any) => h.localBoardId).filter(Boolean))
+      const prevPerms = get().boardPermissions
+      for (const [boardId, perm] of Object.entries(prevPerms)) {
+        if (perm === 'owner') continue
+        if (!cloudBoardIds.has(boardId)) {
+          purgeLocalBoard(boardId)
+          const perms = { ...get().boardPermissions }
+          delete perms[boardId]
+          const hashes = { ...get().contentHashes }
+          delete hashes[boardId]
+          set({ boardPermissions: perms, contentHashes: hashes })
+        }
+      }
+
       // Auto-load boards that don't exist locally (new device scenario)
       if (boardsToAutoLoad.length > 0) {
         const newHashes = { ...get().contentHashes }
@@ -739,8 +941,10 @@ export const useBoardSyncStore = create<BoardSyncStore>()((set, get) => ({
             const boardRes = await fetch(`/api/boards/sync/${localBoardId}`)
             if (!boardRes.ok) continue
 
-            const { board } = await boardRes.json()
-            applyCloudData(localBoardId, board)
+            const { board, permission } = await boardRes.json()
+            const perm = permission || get().boardPermissions[localBoardId] || 'owner'
+            set(s => ({ boardPermissions: { ...s.boardPermissions, [localBoardId]: perm } }))
+            applyCloudData(localBoardId, board, { skipTheme: perm !== 'owner' })
             loadedCount++
 
             const cloudEntry = cloudEntries.find((h: any) => h.localBoardId === localBoardId)
@@ -795,8 +999,10 @@ export const useBoardSyncStore = create<BoardSyncStore>()((set, get) => ({
         const res = await fetch(`/api/boards/sync/${localBoardId}`)
         if (!res.ok) continue
 
-        const { board } = await res.json()
-        applyCloudData(localBoardId, board)
+        const { board, permission } = await res.json()
+        const perm = permission || get().boardPermissions[localBoardId] || 'owner'
+        set(s => ({ boardPermissions: { ...s.boardPermissions, [localBoardId]: perm } }))
+        applyCloudData(localBoardId, board, { skipTheme: perm !== 'owner' })
         updatedCount++
 
         if (board.contentHash) {

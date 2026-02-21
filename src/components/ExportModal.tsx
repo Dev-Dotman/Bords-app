@@ -9,7 +9,58 @@ import { useTextStore } from '../store/textStore'
 import { useKanbanStore } from '../store/kanbanStore'
 import { useMediaStore } from '../store/mediaStore'
 import { useDrawingStore } from '../store/drawingStore'
+import { useReminderStore } from '../store/reminderStore'
+import { useGridStore } from '../store/gridStore'
+import { flushConnectionUpdate } from './Connections'
 import { toPng } from 'html-to-image'
+
+/**
+ * Temporarily neutralise any component-level `* zoom` styling so that
+ * the export captures items at their natural (zoom-independent) sizes.
+ * Components that multiply inline styles by zoom:
+ *  - Checklist: fontSize, padding, borderRadius on the outer [data-node-id] div,
+ *               and scaledFontSize on various inner elements
+ * Returns a cleanup function that restores original values.
+ */
+function neutralizeZoomStyles(): () => void {
+  const zoom = useGridStore.getState().zoom
+  if (zoom === 1) return () => {}
+
+  const saved: { el: HTMLElement; prop: string; value: string }[] = []
+
+  function divideByZoom(el: HTMLElement, prop: 'fontSize' | 'padding' | 'borderRadius') {
+    const val = el.style[prop]
+    if (val) {
+      saved.push({ el, prop, value: val })
+      // Handle compound values like "20px 15px" in padding
+      el.style[prop] = val.replace(/[\d.]+px/g, m => `${parseFloat(m) / zoom}px`)
+    }
+  }
+
+  // Checklist components: outer [data-node-id] div carries inline fontSize, padding, borderRadius
+  document.querySelectorAll('.checklist[class]').forEach(inner => {
+    const outer = (inner as HTMLElement).closest('[data-node-id]') as HTMLElement
+    if (outer) {
+      divideByZoom(outer, 'fontSize')
+      divideByZoom(outer, 'padding')
+      divideByZoom(outer, 'borderRadius')
+    }
+    // Also fix any inner elements with inline fontSize
+    inner.querySelectorAll<HTMLElement>('[style]').forEach(el => {
+      divideByZoom(el, 'fontSize')
+      divideByZoom(el, 'padding')
+    })
+  })
+
+  // Force synchronous reflow so toPng sees the updated styles
+  if (saved.length) void document.body.offsetHeight
+
+  return () => {
+    saved.forEach(({ el, prop, value }) => {
+      ;(el.style as any)[prop] = value
+    })
+  }
+}
 
 /** Convert all cross-origin <img> elements inside a container to inline data-URL src
  *  so html-to-image won't be blocked by canvas tainting.  Returns a cleanup function
@@ -61,6 +112,7 @@ export function ExportModal() {
   const { boards: kanbanBoards } = useKanbanStore()
   const { medias } = useMediaStore()
   const { drawings } = useDrawingStore()
+  const { reminders } = useReminderStore()
 
   const currentBoard = boards.find(b => b.id === currentBoardId)
   const boardName = currentBoard?.name || 'Untitled Board'
@@ -72,7 +124,8 @@ export function ExportModal() {
   const filteredKanbans = kanbanBoards.filter(k => currentBoard?.kanbans.includes(k.id))
   const filteredMedias = medias.filter(m => currentBoard?.medias.includes(m.id))
   const filteredDrawings = drawings.filter(d => currentBoard?.drawings.includes(d.id))
-  const totalItems = filteredNotes.length + filteredChecklists.length + filteredTexts.length + filteredKanbans.length + filteredMedias.length + filteredDrawings.length
+  const filteredReminders = reminders.filter(r => currentBoard?.reminders?.includes(r.id))
+  const totalItems = filteredNotes.length + filteredChecklists.length + filteredTexts.length + filteredKanbans.length + filteredMedias.length + filteredDrawings.length + filteredReminders.length
 
   // Generate preview when modal opens
   useEffect(() => {
@@ -84,6 +137,15 @@ export function ExportModal() {
   }, [isExportModalOpen])
 
   const generatePreview = async () => {
+    // Temporarily neutralize zoom at the DOM level (bypasses React re-render timing)
+    const itemsLayer = document.querySelector('[data-items-layer]') as HTMLElement
+    const savedTransform = itemsLayer?.style.transform || ''
+    if (itemsLayer) {
+      itemsLayer.style.transform = 'scale(1)'
+      void itemsLayer.offsetHeight // force synchronous reflow
+    }
+    const restoreZoomStyles = neutralizeZoomStyles()
+
     try {
       const canvasElement = document.querySelector('[data-board-canvas]') as HTMLElement
       if (!canvasElement) {
@@ -162,6 +224,17 @@ export function ExportModal() {
         })
       })
 
+      // Check all reminders
+      filteredReminders.forEach(reminder => {
+        const element = document.querySelector(`[data-node-id="${reminder.id}"]`) as HTMLElement
+        const width = element?.offsetWidth || 280
+        const height = element?.offsetHeight || 200
+        minX = Math.min(minX, reminder.position.x)
+        minY = Math.min(minY, reminder.position.y)
+        maxX = Math.max(maxX, reminder.position.x + width)
+        maxY = Math.max(maxY, reminder.position.y + height)
+      })
+
       // If no items, use default bounds
       if (!isFinite(minX)) {
         minX = 0
@@ -194,6 +267,9 @@ export function ExportModal() {
       // Wait for layout to settle
       await new Promise(resolve => setTimeout(resolve, 200))
 
+      // Force connection lines to recalculate at new layout positions
+      flushConnectionUpdate()
+
       // Pre-convert cross-origin images to data URLs
       const restoreImages = await inlineExternalImages(canvasElement)
 
@@ -202,6 +278,11 @@ export function ExportModal() {
         width: width,
         height: height,
         style: {
+          // Break out of fixed viewport size so content isn't clipped
+          position: 'static',
+          width: 'auto',
+          height: 'auto',
+          overflow: 'visible',
           transform: `translate(${-(minX - padding)}px, ${-(minY - padding)}px)`,
         },
         pixelRatio: 1,
@@ -231,11 +312,28 @@ export function ExportModal() {
       setPreviewUrl(preview)
     } catch (error) {
       console.error('Error generating preview:', error)
+    } finally {
+      // Always restore zoom styles, even on error
+      restoreZoomStyles()
+      if (itemsLayer) {
+        itemsLayer.style.transform = savedTransform
+      }
+      // Restore connection line positions after zoom/scroll restore
+      flushConnectionUpdate()
     }
   }
 
   const handleExport = async () => {
     setIsExporting(true)
+    // Temporarily neutralize zoom at the DOM level (bypasses React re-render timing)
+    const itemsLayer = document.querySelector('[data-items-layer]') as HTMLElement
+    const savedTransform = itemsLayer?.style.transform || ''
+    if (itemsLayer) {
+      itemsLayer.style.transform = 'scale(1)'
+      void itemsLayer.offsetHeight // force synchronous reflow
+    }
+    const restoreZoomStyles = neutralizeZoomStyles()
+
     try {
       const canvasElement = document.querySelector('[data-board-canvas]') as HTMLElement
       
@@ -316,6 +414,17 @@ export function ExportModal() {
         maxY = Math.max(maxY, media.position.y + height)
       })
 
+      // Check all reminders
+      filteredReminders.forEach(reminder => {
+        const element = document.querySelector(`[data-node-id="${reminder.id}"]`) as HTMLElement
+        const width = element?.offsetWidth || 280
+        const height = element?.offsetHeight || 200
+        minX = Math.min(minX, reminder.position.x)
+        minY = Math.min(minY, reminder.position.y)
+        maxX = Math.max(maxX, reminder.position.x + width)
+        maxY = Math.max(maxY, reminder.position.y + height)
+      })
+
       // If no items, show error
       if (!isFinite(minX)) {
         console.error('No items to export')
@@ -351,12 +460,20 @@ export function ExportModal() {
       // Pre-convert cross-origin images to data URLs
       const restoreImages = await inlineExternalImages(canvasElement)
 
+      // Force connection lines to recalculate at new layout positions
+      flushConnectionUpdate()
+
       // Export the canvas with calculated dimensions
       const dataUrl = await toPng(canvasElement, {
         backgroundColor: isDark ? '#18181b' : '#ffffff',
         width: exportWidth,
         height: exportHeight,
         style: {
+          // Break out of fixed viewport size so content isn't clipped
+          position: 'static',
+          width: 'auto',
+          height: 'auto',
+          overflow: 'visible',
           transform: `translate(${-(minX - padding)}px, ${-(minY - padding)}px)`,
         },
         pixelRatio: 2,
@@ -393,6 +510,14 @@ export function ExportModal() {
     } catch (error) {
       console.error('Error exporting board:', error)
       setIsExporting(false)
+    } finally {
+      // Always restore zoom styles, even on error
+      restoreZoomStyles()
+      if (itemsLayer) {
+        itemsLayer.style.transform = savedTransform
+      }
+      // Restore connection line positions after zoom/scroll restore
+      flushConnectionUpdate()
     }
   }
 

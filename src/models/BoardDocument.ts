@@ -112,12 +112,41 @@ const ConnectionSchema = new Schema({
   id:           { type: String, required: true },
   fromId:       { type: String, required: true },
   toId:         { type: String, required: true },
-  fromType:     { type: String, enum: ['note', 'checklist', 'kanban', 'text', 'media'], required: true },
-  toType:       { type: String, enum: ['note', 'checklist', 'kanban', 'text', 'media'], required: true },
+  fromType:     { type: String, enum: ['note', 'checklist', 'kanban', 'text', 'media', 'reminder'], required: true },
+  toType:       { type: String, enum: ['note', 'checklist', 'kanban', 'text', 'media', 'reminder'], required: true },
   fromPosition: { type: PositionSchema, default: null },
   toPosition:   { type: PositionSchema, default: null },
   color:        { type: String, default: '#3b82f6' },
   boardId:      { type: String, default: '' },
+}, { _id: false })
+
+const ReminderItemSchema = new Schema({
+  id:          { type: String, required: true },
+  text:        { type: String, default: '' },
+  dueDate:     { type: String, default: null },
+  dueTime:     { type: String, default: null },
+  completed:   { type: Boolean, default: false },
+  completedAt: { type: String, default: null },
+}, { _id: false })
+
+const ReminderAssignedToSchema = new Schema({
+  friendId:  { type: String, required: true },
+  userId:    { type: String, required: true },
+  firstName: { type: String, default: '' },
+  lastName:  { type: String, default: '' },
+  email:     { type: String, default: '' },
+}, { _id: false })
+
+const ReminderSchema = new Schema({
+  id:         { type: String, required: true },
+  title:      { type: String, default: 'Reminder' },
+  items:      [ReminderItemSchema],
+  position:   { type: PositionSchema, required: true },
+  color:      { type: String, default: 'bg-amber-100/90' },
+  createdAt:  { type: String, default: null },
+  width:      { type: Number, default: null },
+  height:     { type: Number, default: null },
+  assignedTo: { type: ReminderAssignedToSchema, default: null },
 }, { _id: false })
 
 /* Shared-with entry */
@@ -160,6 +189,9 @@ export interface IBoardDocument {
   owner:      Types.ObjectId
   localBoardId: string          // maps to the client-side board.id
   name:       string
+  workspaceId?: Types.ObjectId  // personal or org_container workspace
+  organizationId?: Types.ObjectId // non-null only for org boards
+  contextType: 'personal' | 'organization' // workspace context
   visibility: 'private' | 'public' | 'shared'
   shareToken: string | null     // for public link sharing
   sharedWith: {
@@ -185,6 +217,7 @@ export interface IBoardDocument {
   drawings:       any[]
   comments:       any[]
   connections:    any[]
+  reminders:      any[]
 
   // Board settings
   connectionLineSettings: { colorMode: string; monochromaticColor: string }
@@ -201,21 +234,23 @@ export interface IBoardDocument {
     drawings:    string[]
     kanbans:     string[]
     medias:      string[]
+    reminders:   string[]
   }
 
-  contentHash:  string         // fast hash of board content for change detection
-  lastSyncedAt: Date
-  createdAt:    Date
-  updatedAt:    Date
+  contentHash?: string
+  lastSyncedAt?: Date
 }
 
 const BoardDocumentSchema = new Schema<IBoardDocument>(
   {
-    owner:        { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
-    localBoardId: { type: String, required: true },
-    name:         { type: String, required: true, trim: true },
-    visibility:   { type: String, enum: ['private', 'public', 'shared'], default: 'private' },
-    shareToken:   { type: String, default: null, sparse: true, unique: true },
+    owner:          { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+    localBoardId:   { type: String, required: true },
+    name:           { type: String, required: true, trim: true },
+    workspaceId:    { type: Schema.Types.ObjectId, ref: 'Workspace', default: null, index: true },
+    organizationId: { type: Schema.Types.ObjectId, ref: 'Organization', default: null, index: true },
+    contextType:    { type: String, enum: ['personal', 'organization'], default: 'personal' },
+    visibility:     { type: String, enum: ['private', 'public', 'shared'], default: 'private' },
+    shareToken:   { type: String, sparse: true, unique: true },
     sharedWith:   [SharedWithSchema],
 
     // Background
@@ -234,6 +269,7 @@ const BoardDocumentSchema = new Schema<IBoardDocument>(
     drawings:     [DrawingSchema],
     comments:     [CommentSchema],
     connections:  [ConnectionSchema],
+    reminders:    [ReminderSchema],
 
     // Board settings
     connectionLineSettings: { type: ConnectionLineSettingsSchema, default: () => ({}) },
@@ -253,6 +289,7 @@ const BoardDocumentSchema = new Schema<IBoardDocument>(
       drawings:    [String],
       kanbans:     [String],
       medias:      [String],
+      reminders:   [String],
     },
 
     contentHash:  { type: String, default: '' },
@@ -263,10 +300,12 @@ const BoardDocumentSchema = new Schema<IBoardDocument>(
 
 // Compound index: one cloud doc per owner + local board
 BoardDocumentSchema.index({ owner: 1, localBoardId: 1 }, { unique: true })
-// For share link lookups
-BoardDocumentSchema.index({ shareToken: 1 })
+// Share link lookups handled by inline sparse unique on shareToken field
 // For listing boards shared with a user
 BoardDocumentSchema.index({ 'sharedWith.userId': 1 })
+// Workspace-scoped queries
+BoardDocumentSchema.index({ workspaceId: 1, contextType: 1 })
+BoardDocumentSchema.index({ organizationId: 1 })
 
 const BoardDocument: Model<IBoardDocument> =
   mongoose.models.BoardDocument || mongoose.model<IBoardDocument>('BoardDocument', BoardDocumentSchema)

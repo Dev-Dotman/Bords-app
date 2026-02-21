@@ -89,6 +89,7 @@ export function OrganizePanel() {
         removeItemFromBoard(currentBoardId, 'drawings', id)
         break
     }
+    useZIndexStore.getState().removeItem(id)
     setDeleteTarget(null)
   }
 

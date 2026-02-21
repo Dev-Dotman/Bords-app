@@ -1,10 +1,11 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { Bell, Check, X, UserPlus, UserMinus, RefreshCw, Building2, CheckCircle2, Loader2, ArrowRight, ArrowUpDown } from 'lucide-react'
+import { Bell, Check, X, UserPlus, UserMinus, RefreshCw, Building2, CheckCircle2, Loader2, ArrowRight, ArrowUpDown, Heart } from 'lucide-react'
 import { useThemeStore } from '@/store/themeStore'
 import { useDelegationStore } from '@/store/delegationStore'
 import { useOrganizationStore } from '@/store/organizationStore'
+import { useWorkspaceStore } from '@/store/workspaceStore'
 import { useRouter } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
 
@@ -16,6 +17,9 @@ const ICON_MAP: Record<string, typeof Bell> = {
   task_updated: ArrowUpDown,
   org_invitation: Building2,
   invitation_accepted: CheckCircle2,
+  friend_request: UserPlus,
+  friend_accepted: Heart,
+  friend_removed: UserMinus,
 }
 
 const COLOR_MAP: Record<string, { bg: string; darkBg: string; icon: string }> = {
@@ -26,22 +30,32 @@ const COLOR_MAP: Record<string, { bg: string; darkBg: string; icon: string }> = 
   task_updated: { bg: 'bg-indigo-100', darkBg: 'bg-indigo-900/30', icon: 'text-indigo-600 dark:text-indigo-400' },
   org_invitation: { bg: 'bg-purple-100', darkBg: 'bg-purple-900/30', icon: 'text-purple-600 dark:text-purple-400' },
   invitation_accepted: { bg: 'bg-emerald-100', darkBg: 'bg-emerald-900/30', icon: 'text-emerald-600 dark:text-emerald-400' },
+  friend_request: { bg: 'bg-violet-100', darkBg: 'bg-violet-900/30', icon: 'text-violet-600 dark:text-violet-400' },
+  friend_accepted: { bg: 'bg-pink-100', darkBg: 'bg-pink-900/30', icon: 'text-pink-600 dark:text-pink-400' },
+  friend_removed: { bg: 'bg-red-100', darkBg: 'bg-red-900/30', icon: 'text-red-600 dark:text-red-400' },
 }
 
 export function ActivitySidebar() {
   const isDark = useThemeStore((s) => s.isDark)
-  const { notifications, unreadCount, fetchNotifications, markNotificationsRead, acceptInvitation, declineInvitation } =
+  const { notifications, unreadCount, fetchNotifications, markNotificationsRead, acceptInvitation, declineInvitation, acceptFriendRequest, declineFriendRequest } =
     useDelegationStore()
   const { fetchOrganizations } = useOrganizationStore()
+  const activeContext = useWorkspaceStore((s) => s.activeContext)
+  const friends = useWorkspaceStore((s) => s.friends)
+  const fetchFriends = useWorkspaceStore((s) => s.fetchFriends)
   const router = useRouter()
   const [isOpen, setIsOpen] = useState(false)
   const [acceptingId, setAcceptingId] = useState<string | null>(null)
   const [acceptedIds, setAcceptedIds] = useState<Set<string>>(new Set())
   const panelRef = useRef<HTMLDivElement>(null)
 
+  // Build set of friendIds that are already accepted (for hiding stale action buttons)
+  const acceptedFriendIds = new Set(friends.filter((f) => f.status === 'accepted').map((f) => f._id))
+
   useEffect(() => {
     if (isOpen) {
       fetchNotifications()
+      fetchFriends()
     }
   }, [isOpen])
 
@@ -61,6 +75,20 @@ export function ActivitySidebar() {
     const interval = setInterval(fetchNotifications, 30000)
     return () => clearInterval(interval)
   }, [])
+
+  // Filter notifications by current workspace context
+  const filteredNotifications = notifications.filter((n) => {
+    if (!activeContext) return true
+    if (activeContext.type === 'personal') {
+      // Personal context: show notifications without an organizationId
+      // Also always show org_invitation — user must see/respond before they join
+      return !n.metadata?.organizationId || n.type === 'org_invitation'
+    }
+    // Organization context: show only notifications for this org
+    return n.metadata?.organizationId === activeContext.organizationId
+  })
+
+  const filteredUnreadCount = filteredNotifications.filter((n) => !n.isRead).length
 
   const formatTime = (dateStr: string) => {
     const diff = Date.now() - new Date(dateStr).getTime()
@@ -85,9 +113,9 @@ export function ActivitySidebar() {
         }`}
       >
         <Bell size={20} />
-        {unreadCount > 0 && (
+        {filteredUnreadCount > 0 && (
           <span className="absolute -top-1 -right-1 w-5 h-5 flex items-center justify-center rounded-full text-[10px] font-bold bg-red-500 text-white ring-2 ring-white dark:ring-zinc-800">
-            {unreadCount > 9 ? '9+' : unreadCount}
+            {filteredUnreadCount > 9 ? '9+' : filteredUnreadCount}
           </span>
         )}
       </button>
@@ -109,10 +137,10 @@ export function ActivitySidebar() {
               isDark ? 'border-zinc-700' : 'border-zinc-200'
             }`}>
               <h3 className={`font-semibold text-sm ${isDark ? 'text-white' : 'text-zinc-900'}`}>
-                Activity
+                {activeContext?.type === 'personal' ? 'Personal Activity' : activeContext?.type === 'organization' ? `${(activeContext as any).organizationName} Activity` : 'Activity'}
               </h3>
               <div className="flex items-center gap-2">
-                {unreadCount > 0 && (
+                {filteredUnreadCount > 0 && (
                   <button
                     onClick={() => markNotificationsRead()}
                     className={`text-xs font-medium transition-colors ${
@@ -133,15 +161,16 @@ export function ActivitySidebar() {
 
             {/* Notifications List */}
             <div className="overflow-auto max-h-[60vh]">
-              {notifications.length === 0 ? (
+              {filteredNotifications.length === 0 ? (
                 <div className={`p-8 text-center text-sm ${isDark ? 'text-zinc-500' : 'text-zinc-400'}`}>
                   No activity yet
                 </div>
               ) : (
-                notifications.map((n) => {
+                filteredNotifications.map((n) => {
                   const Icon = ICON_MAP[n.type] || Bell
                   const colors = COLOR_MAP[n.type] || COLOR_MAP.task_assigned
                   const isInvitation = n.type === 'org_invitation' && !n.isRead && !acceptedIds.has(n._id)
+                  const isFriendRequest = n.type === 'friend_request' && !n.isRead && !acceptedIds.has(n._id) && !(n.metadata?.friendId && acceptedFriendIds.has(n.metadata.friendId))
                   const isTaskNotification = n.type === 'task_assigned' || n.type === 'task_reassigned'
                   const isCompletedNotification = n.type === 'task_completed'
                   const wasAccepted = acceptedIds.has(n._id)
@@ -161,6 +190,23 @@ export function ActivitySidebar() {
 
                   const handleDecline = async () => {
                     await declineInvitation(n._id)
+                  }
+
+                  const handleFriendAccept = async () => {
+                    if (!n.metadata?.friendId) return
+                    setAcceptingId(n._id)
+                    const result = await acceptFriendRequest(n.metadata.friendId)
+                    if (result.success) {
+                      setAcceptedIds((prev) => new Set(prev).add(n._id))
+                    }
+                    setAcceptingId(null)
+                  }
+
+                  const handleFriendDecline = async () => {
+                    if (!n.metadata?.friendId) return
+                    setAcceptingId(n._id)
+                    await declineFriendRequest(n.metadata.friendId, n._id)
+                    setAcceptingId(null)
                   }
 
                   return (
@@ -218,11 +264,55 @@ export function ActivitySidebar() {
                         )}
 
                         {/* Success after accepting */}
-                        {wasAccepted && (
+                        {wasAccepted && n.type === 'org_invitation' && (
                           <div className="flex items-center gap-1.5 mt-2">
                             <CheckCircle2 size={12} className="text-emerald-500" />
                             <span className="text-xs font-medium text-emerald-500">
                               Joined {n.metadata?.organizationName || 'organization'}
+                            </span>
+                          </div>
+                        )}
+
+                        {/* CTA for friend requests */}
+                        {isFriendRequest && !wasAccepted && (
+                          <div className="flex items-center gap-2 mt-2">
+                            <button
+                              onClick={handleFriendAccept}
+                              disabled={isAccepting}
+                              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                                isAccepting
+                                  ? 'opacity-60 cursor-not-allowed'
+                                  : ''
+                              } bg-violet-500 hover:bg-violet-600 text-white`}
+                            >
+                              {isAccepting ? (
+                                <Loader2 size={12} className="animate-spin" />
+                              ) : (
+                                <Check size={12} />
+                              )}
+                              {isAccepting ? 'Accepting...' : 'Accept'}
+                            </button>
+                            <button
+                              onClick={handleFriendDecline}
+                              disabled={isAccepting}
+                              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                                isDark
+                                  ? 'bg-zinc-700 hover:bg-zinc-600 text-zinc-300'
+                                  : 'bg-zinc-100 hover:bg-zinc-200 text-zinc-600'
+                              }`}
+                            >
+                              <X size={12} />
+                              Decline
+                            </button>
+                          </div>
+                        )}
+
+                        {/* Success after accepting friend request */}
+                        {wasAccepted && n.type === 'friend_request' && (
+                          <div className="flex items-center gap-1.5 mt-2">
+                            <CheckCircle2 size={12} className="text-violet-500" />
+                            <span className="text-xs font-medium text-violet-500">
+                              You are now friends!
                             </span>
                           </div>
                         )}
@@ -247,9 +337,12 @@ export function ActivitySidebar() {
                             onClick={async () => {
                               markNotificationsRead([n._id])
                               // Trigger a refetch of assignments which syncs completed items to local stores
-                              const { currentBordId, fetchAssignments } = useDelegationStore.getState()
+                              const { currentBordId, fetchAssignments, fetchPersonalAssignments } = useDelegationStore.getState()
                               if (n.metadata?.bordId) {
                                 await fetchAssignments(n.metadata.bordId)
+                              } else if (!n.metadata?.organizationId) {
+                                // Personal task — no bordId, sync via personal assignments
+                                await fetchPersonalAssignments()
                               } else if (currentBordId) {
                                 await fetchAssignments(currentBordId)
                               }
@@ -266,9 +359,12 @@ export function ActivitySidebar() {
                           <button
                             onClick={async () => {
                               markNotificationsRead([n._id])
-                              const { currentBordId, fetchAssignments } = useDelegationStore.getState()
+                              const { currentBordId, fetchAssignments, fetchPersonalAssignments } = useDelegationStore.getState()
                               if (n.metadata?.bordId) {
                                 await fetchAssignments(n.metadata.bordId)
+                              } else if (!n.metadata?.organizationId) {
+                                // Personal task — no bordId, sync via personal assignments
+                                await fetchPersonalAssignments()
                               } else if (currentBordId) {
                                 await fetchAssignments(currentBordId)
                               }
@@ -284,7 +380,7 @@ export function ActivitySidebar() {
                           {formatTime(n.createdAt)}
                         </p>
                       </div>
-                      {!n.isRead && !isInvitation && (
+                      {!n.isRead && !isInvitation && !isFriendRequest && (
                         <div className="w-2 h-2 rounded-full bg-blue-500 mt-2 flex-shrink-0" />
                       )}
                     </div>

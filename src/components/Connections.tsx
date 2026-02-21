@@ -1,9 +1,8 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Link2, Trash2, Eye, X, ChevronUp, ChevronDown } from 'lucide-react'
 import { useConnectionStore } from '../store/connectionStore'
 import { useBoardStore } from '../store/boardStore'
-import { useGridStore } from '../store/gridStore'
 import { useThemeStore } from '../store/themeStore'
 import { ConnectionsModal } from './ConnectionsModal'
 import toast from 'react-hot-toast'
@@ -14,118 +13,110 @@ interface ConnectionLineProps {
   color: string;
 }
 
-export function ConnectionLine({ fromId, toId, color }: ConnectionLineProps) {
+function ConnectionLine({ fromId, toId, color }: ConnectionLineProps) {
   const pathRef = useRef<SVGPathElement>(null)
-  const [pathD, setPathD] = useState('')
 
   useEffect(() => {
+    const el = pathRef.current
+    if (!el) return
+
+    // Direct DOM updates — no React state, no re-renders
     const updatePath = () => {
       const fromIndicator = document.querySelector(`[data-connection-id="${fromId}-indicator"]`)
       const toIndicator = document.querySelector(`[data-connection-id="${toId}-indicator"]`)
-      
       if (!fromIndicator || !toIndicator) return
 
       const fromRect = fromIndicator.getBoundingClientRect()
       const toRect = toIndicator.getBoundingClientRect()
-      
-      // Use viewport coordinates directly
+
       const fromX = fromRect.left + (fromRect.width / 2)
       const fromY = fromRect.top + (fromRect.height / 2)
       const toX = toRect.left + (toRect.width / 2)
       const toY = toRect.top + (toRect.height / 2)
 
       const midX = (fromX + toX) / 2
-      const newPath = `M ${fromX} ${fromY} C ${midX} ${fromY}, ${midX} ${toY}, ${toX} ${toY}`
-
-      setPathD(newPath)
+      el.setAttribute('d', `M ${fromX} ${fromY} C ${midX} ${fromY}, ${midX} ${toY}, ${toX} ${toY}`)
     }
 
-    // Initial update
+    // Register with the event-driven update system
+    connectionLineUpdaters.add(updatePath)
+    installGlobalListeners()
+
+    // Initial position
     updatePath()
 
-    // Use IntersectionObserver for better performance
-    const observerOptions = {
-      root: null,
-      threshold: 0,
-      rootMargin: '100px' // Update even slightly before visible
-    }
-
-    const observer = new IntersectionObserver((entries) => {
-      entries.forEach(entry => {
-        if (entry.isIntersecting) {
-          updatePath()
-        }
-      })
-    }, observerOptions)
-
-    const fromEl = document.querySelector(`[data-node-id="${fromId}"]`)
-    const toEl = document.querySelector(`[data-node-id="${toId}"]`)
-    
-    if (fromEl) observer.observe(fromEl)
-    if (toEl) observer.observe(toEl)
-
-    // MutationObserver to track style changes (for drag movement)
-    // Use immediate updates during drag for smooth following
-    const mutationObserver = new MutationObserver(() => {
-      // Call updatePath directly without any delay for instant updates
-      updatePath()
-    })
-    
-    if (fromEl) {
-      mutationObserver.observe(fromEl, {
-        attributes: true,
-        attributeFilter: ['style'],
-        attributeOldValue: false // Don't track old values for performance
-      })
-    }
-    if (toEl) {
-      mutationObserver.observe(toEl, {
-        attributes: true,
-        attributeFilter: ['style'],
-        attributeOldValue: false
-      })
-    }
-
-    // Passive scroll listener for all scroll containers
-    const scrollHandler = () => {
-      updatePath()
-    }
-
-    // Listen to both window scroll and overflow scroll containers
-    const scrollContainers = document.querySelectorAll('.overflow-auto, [style*="overflow"]')
-    window.addEventListener('scroll', scrollHandler, { passive: true })
-    scrollContainers.forEach(container => {
-      container.addEventListener('scroll', scrollHandler, { passive: true })
-    })
-    
-    window.addEventListener('resize', updatePath, { passive: true })
-
     return () => {
-      observer.disconnect()
-      mutationObserver.disconnect()
-      window.removeEventListener('scroll', scrollHandler)
-      scrollContainers.forEach(container => {
-        container.removeEventListener('scroll', scrollHandler)
-      })
-      window.removeEventListener('resize', updatePath)
+      connectionLineUpdaters.delete(updatePath)
     }
   }, [fromId, toId])
 
   return (
     <path
       ref={pathRef}
-      d={pathD}
       stroke={color}
       strokeWidth="2"
       fill="none"
       strokeLinecap="round"
       className="connection-line"
-      style={{ 
-        pointerEvents: 'none',
-        willChange: 'd'
-      }}
+      style={{ pointerEvents: 'none' }}
     />
   )
+}
+
+// ─── Event-driven connection line update system ──────────────────────────────
+// Instead of 60fps rAF loop, updates only run when something actually moves:
+// scroll, resize, drag events, or DOM mutations on tracked containers.
+// Zero CPU when idle.
+const connectionLineUpdaters = new Set<() => void>()
+let pendingUpdate: number | null = null
+
+/** Schedule a single rAF to update all connection lines. Coalesces multiple events. */
+export function scheduleConnectionUpdate() {
+  if (connectionLineUpdaters.size === 0) return
+  if (pendingUpdate !== null) return // already scheduled
+  pendingUpdate = requestAnimationFrame(() => {
+    pendingUpdate = null
+    connectionLineUpdaters.forEach((fn) => fn())
+  })
+}
+
+/** Synchronously update all connection line positions (for export capture). */
+export function flushConnectionUpdate() {
+  connectionLineUpdaters.forEach((fn) => fn())
+}
+
+// Continuous loop for active drags only
+let dragLoopId: number | null = null
+let isDragging = false
+
+export function notifyConnectionsDragStart() {
+  isDragging = true
+  if (dragLoopId !== null) return
+  const tick = () => {
+    if (!isDragging || connectionLineUpdaters.size === 0) {
+      dragLoopId = null
+      isDragging = false
+      return
+    }
+    connectionLineUpdaters.forEach((fn) => fn())
+    dragLoopId = requestAnimationFrame(tick)
+  }
+  dragLoopId = requestAnimationFrame(tick)
+}
+
+export function notifyConnectionsDragEnd() {
+  isDragging = false
+  // One final update after drag ends
+  scheduleConnectionUpdate()
+}
+
+// Global scroll/resize listeners — installed once when first line mounts
+let globalListenersInstalled = false
+function installGlobalListeners() {
+  if (globalListenersInstalled) return
+  globalListenersInstalled = true
+  window.addEventListener('scroll', scheduleConnectionUpdate, { capture: true, passive: true })
+  window.addEventListener('resize', scheduleConnectionUpdate, { passive: true })
 }
 
 /**
@@ -184,162 +175,10 @@ export function Connections() {
   const connections = useConnectionStore((state) => state.connections)
   const isVisible = useConnectionStore((state) => state.isVisible)
   const currentBoardId = useBoardStore((state) => state.currentBoardId ?? '')
-  const { zoom } = useGridStore()
   const isDark = useThemeStore((state) => state.isDark)
 
   // Filter connections by current board
   const boardConnections = connections.filter(conn => conn.boardId === currentBoardId)
-
-  // Memoize drawConnectionLines to prevent unnecessary recreations
-  const drawConnectionLines = useCallback(() => {
-    if (!currentBoardId || !isVisible || boardConnections.length === 0) return null;
-
-    return boardConnections.map(connection => {
-      const fromIndicator = document.querySelector(`[data-connection-id="${connection.fromId}-indicator"]`)
-      const toIndicator = document.querySelector(`[data-connection-id="${connection.toId}-indicator"]`)
-      
-      if (!fromIndicator || !toIndicator) return null
-
-      const fromRect = fromIndicator.getBoundingClientRect()
-      const toRect = toIndicator.getBoundingClientRect()
-      
-      // Get center points of indicators
-      const fromX = fromRect.left + (fromRect.width / 2)
-      const fromY = fromRect.top + (fromRect.height / 2)
-      const toX = toRect.left + (toRect.width / 2)
-      const toY = toRect.top + (toRect.height / 2)
-
-      // Calculate control points for smooth curve
-      const midX = (fromX + toX) / 2
-      const distance = Math.abs(toX - fromX)
-      const curvature = Math.min(distance * 0.2, 50) // Adjust curve based on distance
-
-      // Create curved path
-      const path = `
-        M ${fromX} ${fromY}
-        C ${midX} ${fromY},
-          ${midX} ${toY},
-          ${toX} ${toY}
-      `
-
-      return (
-        <g key={connection.id}>
-          <path
-            d={path}
-            stroke={connection.color}
-            strokeWidth="2"
-            fill="none"
-            strokeLinecap="round"
-            className="connection-line"
-            style={{ pointerEvents: 'none' }}
-          />
-        </g>
-      )
-    })
-  }, [boardConnections, currentBoardId, isVisible]);
-
-  // Initial render and update effect
-  useEffect(() => {
-    if (!currentBoardId || !isVisible || boardConnections.length === 0) return;
-
-    // Immediate first render
-    const immediateRender = () => {
-      requestAnimationFrame(() => {
-        const allIndicatorsPresent = boardConnections.every(conn => {
-          return document.querySelector(`[data-connection-id="${conn.fromId}-indicator"]`) &&
-                 document.querySelector(`[data-connection-id="${conn.toId}-indicator"]`)
-        });
-
-        if (allIndicatorsPresent) {
-          drawConnectionLines();
-        } else {
-          // If not all indicators are present, try again in 50ms
-          setTimeout(immediateRender, 50);
-        }
-      });
-    };
-
-    // Start immediate render
-    immediateRender();
-
-    // Regular updates with better performance
-    const updateLines = () => requestAnimationFrame(drawConnectionLines)
-    
-    // MutationObserver to track item movement and style changes
-    const mutationObserver = new MutationObserver((mutations) => {
-      // Only update if relevant changes occurred
-      const shouldUpdate = mutations.some(mutation => {
-        if (mutation.type === 'attributes') {
-          const target = mutation.target as HTMLElement
-          return target.classList.contains('item-container') || 
-                 target.hasAttribute('data-node-id')
-        }
-        return false
-      })
-      
-      if (shouldUpdate) {
-        updateLines()
-      }
-    })
-    
-    // Observe all item containers for movement
-    document.querySelectorAll('.item-container').forEach(el => {
-      mutationObserver.observe(el, {
-        attributes: true,
-        attributeFilter: ['style', 'class']
-      })
-    })
-    
-    // Also observe body for new items being added
-    mutationObserver.observe(document.body, {
-      childList: true,
-      subtree: true
-    })
-    
-    // Use IntersectionObserver for visibility-based updates
-    const observerOptions = {
-      root: null,
-      threshold: 0,
-      rootMargin: '200px'
-    }
-    
-    const intersectionObserver = new IntersectionObserver((entries) => {
-      entries.forEach(entry => {
-        if (entry.isIntersecting) {
-          updateLines()
-        }
-      })
-    }, observerOptions)
-    
-    // Observe all item containers
-    document.querySelectorAll('.item-container').forEach(el => {
-      intersectionObserver.observe(el)
-    })
-
-    // Passive scroll listeners for all scroll containers
-    const scrollHandler = () => {
-      updateLines()
-    }
-    
-    window.addEventListener('scroll', scrollHandler, { passive: true })
-    window.addEventListener('resize', updateLines, { passive: true })
-    
-    // Listen to scroll on overflow containers
-    const scrollContainers = document.querySelectorAll('.overflow-auto')
-    scrollContainers.forEach(container => {
-      container.addEventListener('scroll', scrollHandler, { passive: true })
-    })
-
-    return () => {
-      mutationObserver.disconnect()
-      intersectionObserver.disconnect()
-      window.removeEventListener('scroll', scrollHandler)
-      window.removeEventListener('resize', updateLines)
-      scrollContainers.forEach(container => {
-        container.removeEventListener('scroll', scrollHandler)
-      })
-    }
-  }, [currentBoardId, isVisible, boardConnections, drawConnectionLines])
 
   const formatConnectionText = (text: string | undefined) => {
     if (!text) return "Untitled";

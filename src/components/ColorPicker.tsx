@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { useThemeStore } from '@/store/themeStore'
 
 export const boardColorOptions = [
   // Row 1 — warm
@@ -87,6 +88,7 @@ export function ColorPicker({
   colors,
   triggerRef,
 }: ColorPickerProps) {
+  const isDark = useThemeStore((s) => s.isDark)
   const ref = useRef<HTMLDivElement>(null)
   const options = colors ?? (useHex ? hexColorOptions : boardColorOptions)
   const [fixedPos, setFixedPos] = useState<{ top: number; right: number } | null>(null)
@@ -119,15 +121,15 @@ export function ColorPicker({
       ref={ref}
       className={
         usePortal
-          ? 'fixed bg-white/95 backdrop-blur-md rounded-2xl shadow-xl border border-black/10 p-3 z-[99999]'
-          : `absolute ${position} bg-white/95 backdrop-blur-md rounded-2xl shadow-xl border border-black/10 p-3 z-[9999]`
+          ? `fixed backdrop-blur-md rounded-2xl shadow-xl border p-3 z-[99999] ${isDark ? 'bg-zinc-800/95 border-zinc-700' : 'bg-white/95 border-black/10'}`
+          : `absolute ${position} backdrop-blur-md rounded-2xl shadow-xl border p-3 z-[9999] ${isDark ? 'bg-zinc-800/95 border-zinc-700' : 'bg-white/95 border-black/10'}`
       }
       style={usePortal && fixedPos ? { top: fixedPos.top, right: fixedPos.right } : undefined}
       onClick={(e) => e.stopPropagation()}
       onMouseDown={(e) => e.stopPropagation()}
       onPointerDown={(e) => e.stopPropagation()}
     >
-      <div className="text-xs font-medium text-gray-600 mb-2 text-center">
+      <div className={`text-xs font-medium mb-2 text-center ${isDark ? 'text-zinc-400' : 'text-gray-600'}`}>
         {label}
       </div>
       <div className="grid grid-cols-5 gap-1.5">
@@ -141,8 +143,8 @@ export function ColorPicker({
             }}
             className={`w-8 h-8 rounded-lg border-2 transition-all duration-150 hover:scale-110 ${
               currentColor === opt.value
-                ? 'border-blue-500 scale-110 ring-2 ring-blue-200'
-                : 'border-gray-200 hover:border-gray-300'
+                ? `border-blue-500 scale-110 ring-2 ${isDark ? 'ring-blue-500/30' : 'ring-blue-200'}`
+                : isDark ? 'border-zinc-600 hover:border-zinc-500' : 'border-gray-200 hover:border-gray-300'
             } ${useHex || colors ? '' : opt.value}`}
             style={useHex || colors ? { backgroundColor: opt.value } : undefined}
             title={opt.name}

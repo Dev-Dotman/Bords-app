@@ -2,6 +2,7 @@ import mongoose, { Schema, Model, Types } from 'mongoose'
 
 export interface IOrganization {
   _id: string
+  workspaceId?: Types.ObjectId  // the org_container workspace
   name: string
   ownerId: Types.ObjectId
   createdAt: Date
@@ -10,6 +11,12 @@ export interface IOrganization {
 
 const OrganizationSchema = new Schema<IOrganization>(
   {
+    workspaceId: {
+      type: Schema.Types.ObjectId,
+      ref: 'Workspace',
+      default: null,
+      index: true,
+    },
     name: {
       type: String,
       required: true,

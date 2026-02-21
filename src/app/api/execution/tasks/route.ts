@@ -98,8 +98,45 @@ export async function GET() {
     })
   }
 
+  // ── Personal tasks (reminders) ──
+  const personalTasks = await TaskAssignment.find({
+    assignedTo: user.id,
+    contextType: 'personal',
+    status: { $in: ['assigned', 'completed'] },
+    isDeleted: false,
+  })
+    .populate('assignedBy', 'firstName lastName')
+    .sort({ createdAt: -1 })
+    .lean()
+
+  const personalItems = personalTasks.map((a: any) => ({
+    _id: a._id.toString(),
+    bordId: null,
+    bordTitle: null,
+    sourceType: a.sourceType,
+    sourceId: a.sourceId,
+    content: a.content,
+    priority: a.priority,
+    priorityOrder: ({ high: 3, normal: 2, low: 1 } as Record<string, number>)[a.priority] || 2,
+    dueDate: a.dueDate?.toISOString() || null,
+    executionNote: a.executionNote,
+    status: a.status,
+    columnId: a.columnId || null,
+    columnTitle: a.columnTitle || null,
+    availableColumns: a.availableColumns || [],
+    publishedAt: a.publishedAt?.toISOString() || null,
+    completedAt: a.completedAt?.toISOString() || null,
+    createdAt: a.createdAt?.toISOString(),
+    contextType: 'personal',
+    assigner: a.assignedBy ? {
+      firstName: (a.assignedBy as any).firstName,
+      lastName: (a.assignedBy as any).lastName,
+    } : undefined,
+  }))
+
   return NextResponse.json({
     tasksByOrganization: Object.values(tasksByOrg),
     organizations: Array.from(orgMap.values()),
+    personalTasks: personalItems,
   })
 }

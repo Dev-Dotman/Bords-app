@@ -76,6 +76,7 @@ export async function PUT(
           bordId: bord._id.toString(),
           taskAssignmentId: assignment._id.toString(),
           bordTitle: bord.title,
+          organizationId: bord.organizationId?.toString(),
           sourceType: assignment.sourceType,
           sourceId: assignment.sourceId,
         },

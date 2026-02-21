@@ -10,6 +10,7 @@ interface OrganizationStore {
   currentOrgId: string | null
   employees: EmployeeDTO[]
   pendingInvitations: InvitationDTO[]
+  isOwnerOfCurrentOrg: boolean
   isLoading: boolean
   error: string | null
 
@@ -27,6 +28,7 @@ export const useOrganizationStore = create<OrganizationStore>((set, get) => ({
   currentOrgId: null,
   employees: [],
   pendingInvitations: [],
+  isOwnerOfCurrentOrg: false,
   isLoading: false,
   error: null,
 
@@ -82,7 +84,8 @@ export const useOrganizationStore = create<OrganizationStore>((set, get) => ({
       if (!res.ok) throw new Error(data.error)
       set({
         employees: data.employees,
-        pendingInvitations: data.pendingInvitations,
+        pendingInvitations: data.pendingInvitations || [],
+        isOwnerOfCurrentOrg: data.isOwner ?? true,
       })
     } catch (err: any) {
       set({ error: err.message })

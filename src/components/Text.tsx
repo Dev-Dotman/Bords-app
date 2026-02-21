@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { useDraggable } from '@dnd-kit/core'
 import { CSS } from '@dnd-kit/utilities'
+import { Resizable } from 're-resizable'
 import { useTextStore, TextElement } from '../store/textStore'
 import { useDragModeStore } from '../store/dragModeStore'
 import { Trash2, RotateCcw, RotateCw, ZoomIn, ZoomOut } from 'lucide-react'
@@ -8,9 +9,10 @@ import { useGridStore } from '../store/gridStore'
 import { useThemeStore } from '../store/themeStore'
 import { useConnectionStore } from '../store/connectionStore'
 import { useZIndexStore } from '../store/zIndexStore'
+import { useViewportScale } from '../hooks/useViewportScale'
 import { ColorPicker } from './ColorPicker'
 
-export function Text({ id, text, position, fontSize, color, rotation = 0 }: TextElement & { rotation?: number }) {
+export function Text({ id, text, position, fontSize, color, rotation = 0, width = 200 }: TextElement & { rotation?: number }) {
   const [isEditing, setIsEditing] = useState(false)
   const [isSelected, setIsSelected] = useState(false)
   const [isHovered, setIsHovered] = useState(false)
@@ -24,6 +26,11 @@ export function Text({ id, text, position, fontSize, color, rotation = 0 }: Text
   const zoom = useGridStore((state) => state.zoom)
   const isDark = useThemeStore((state) => state.isDark)
   const { removeConnectionsByItemId } = useConnectionStore()
+  const vScale = useViewportScale()
+
+  const handleResizeStop = (_e: any, _dir: any, _ref: any, d: any) => {
+    updateText(id, { width: width + Math.round(d.width / vScale) })
+  }
 
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: `text-${id}`,
@@ -62,12 +69,13 @@ export function Text({ id, text, position, fontSize, color, rotation = 0 }: Text
     return () => document.removeEventListener('pointerdown', handleClickOutside);
   }, [id]);
 
+  const zoomedTransform = transform ? { ...transform, x: transform.x / zoom, y: transform.y / zoom } : null
+
   const style = {
-    transform: CSS.Translate.toString(transform),
+    transform: CSS.Translate.toString(zoomedTransform),
     position: 'absolute' as const,
     left: position.x,
     top: position.y,
-    rotate: `${rotation || 0}deg`,
     touchAction: 'none' as const,
     userSelect: 'none' as const,
     WebkitUserSelect: 'none' as const,
@@ -78,65 +86,104 @@ export function Text({ id, text, position, fontSize, color, rotation = 0 }: Text
 
   return (
     <div
-      ref={setNodeRef}
-      {...attributes}
       style={style}
-      className={`select-none will-change-transform ${
-        isSelected 
-          ? 'ring-2 ring-blue-400/50 rounded-lg shadow-lg' 
-          : isHovered ? 'ring-1 ring-blue-300/30 rounded-lg' : ''
-      }`}
-      onPointerDown={(e) => {
-        bringToFront(id);
-        // Forward to dnd-kit's listener so dragging still works
-        (listeners as any)?.onPointerDown?.(e);
-      }}
-      onClick={(e) => {
-        e.stopPropagation();
-        setIsSelected(true);
-      }}
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
-      onTouchStart={() => setIsSelected(true)}
+      data-node-id={id}
       data-text-id={id}
       data-item-id={id}
-      onFocus={(e) => e.preventDefault()}
+      onMouseDown={() => bringToFront(id)}
     >
-      {isEditing ? (
-        <textarea
-          autoFocus
-          value={text}
-          onChange={(e) => updateText(id, { text: e.target.value })}
-          onBlur={() => setIsEditing(false)}
-          style={{ 
-            fontSize: `${fontSize * zoom}px`,
-            color: isDark ? '#fff' : color,
-            minWidth: '200px'
-          }}
-          className={`p-3 backdrop-blur-sm rounded-lg border-2 border-blue-400/50 focus:ring-0 focus:border-blue-500 resize-none shadow-sm ${
-            isDark ? 'bg-zinc-800/90 text-white placeholder:text-gray-400' : 'bg-white/80 text-gray-900'
+      <Resizable
+        size={{ width: width * vScale, height: 'auto' }}
+        onResizeStop={handleResizeStop}
+        minWidth={80 * vScale}
+        enable={{
+          top: false,
+          right: !isDragging,
+          bottom: false,
+          left: false,
+          topRight: false,
+          bottomRight: false,
+          bottomLeft: false,
+          topLeft: false,
+        }}
+        handleStyles={{
+          right: {
+            right: '-4px',
+            width: '12px',
+            cursor: 'ew-resize',
+            zIndex: 10,
+          },
+        }}
+        handleComponent={{
+          right: (
+            <div
+              onPointerDown={(e) => e.stopPropagation()}
+              onMouseDown={(e) => e.stopPropagation()}
+              style={{ width: '100%', height: '100%' }}
+            />
+          ),
+        }}
+      >
+        <div
+          ref={setNodeRef}
+          {...attributes}
+          style={{ rotate: `${rotation || 0}deg` }}
+          className={`select-none will-change-transform ${
+            isSelected 
+              ? 'ring-2 ring-blue-400/50 rounded-lg shadow-lg' 
+              : isHovered ? 'ring-1 ring-blue-300/30 rounded-lg' : ''
           }`}
-          onClick={(e) => e.stopPropagation()}
-        />
-      ) : (
-        <div 
-          onDoubleClick={(e) => {
-            e.stopPropagation();
-            setIsEditing(true);
+          onPointerDown={(e) => {
+            bringToFront(id);
+            (listeners as any)?.onPointerDown?.(e);
           }}
           onClick={(e) => {
             e.stopPropagation();
             setIsSelected(true);
           }}
-          style={{ 
-            fontSize: `${fontSize * zoom}px`,
-            color
-          }}
-          className="p-3 cursor-text whitespace-pre-wrap select-none hover:bg-white/5 rounded-lg transition-colors"
+          onMouseEnter={() => setIsHovered(true)}
+          onMouseLeave={() => setIsHovered(false)}
+          onTouchStart={() => setIsSelected(true)}
+          onFocus={(e) => e.preventDefault()}
         >
-          {text}
+          {isEditing ? (
+            <textarea
+              autoFocus
+              value={text}
+              onChange={(e) => updateText(id, { text: e.target.value })}
+              onBlur={() => setIsEditing(false)}
+              style={{ 
+                fontSize: `${fontSize}px`,
+                color: isDark ? '#fff' : color,
+                width: '100%',
+              }}
+              className={`w-full p-3 backdrop-blur-sm rounded-lg border-2 border-blue-400/50 focus:ring-0 focus:border-blue-500 resize-none shadow-sm ${
+                isDark ? 'bg-zinc-800/90 text-white placeholder:text-gray-400' : 'bg-white/80 text-gray-900'
+              }`}
+              onClick={(e) => e.stopPropagation()}
+            />
+          ) : (
+            <div 
+              onDoubleClick={(e) => {
+                e.stopPropagation();
+                setIsEditing(true);
+              }}
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsSelected(true);
+              }}
+              style={{ 
+                fontSize: `${fontSize}px`,
+                color,
+                wordBreak: 'break-word' as const,
+              }}
+              className="p-3 cursor-text whitespace-pre-wrap select-none hover:bg-white/5 rounded-lg transition-colors"
+            >
+              {text}
+            </div>
+          )}
         </div>
-      )}
+      </Resizable>
 
       {isSelected && !isEditing && (
           <div
@@ -241,6 +288,7 @@ export function Text({ id, text, position, fontSize, color, rotation = 0 }: Text
                   e.stopPropagation();
                   removeConnectionsByItemId(id);
                   deleteText(id);
+                  useZIndexStore.getState().removeItem(id);
                 }}
                 className="p-2 hover:bg-red-500/10 rounded-full transition-all duration-200 hover:scale-110 min-w-[40px] min-h-[40px] flex items-center justify-center"
                 title="Delete text"

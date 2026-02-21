@@ -24,7 +24,7 @@ export interface SendEmailOptions {
 export async function sendEmail({ to, subject, html, text }: SendEmailOptions) {
   try {
     const info = await transporter.sendMail({
-      from: process.env.ZEPTOMAIL_FROM_EMAIL || 'noreply@bords.app',
+      from: process.env.ZEPTOMAIL_FROM_EMAIL || 'noreply@axecorelabs.com',
       to,
       subject,
       html,

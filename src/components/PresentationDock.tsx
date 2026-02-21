@@ -1,20 +1,37 @@
 import { useState } from 'react'
-import { Pencil, Eraser, Download } from 'lucide-react'
+import { Pencil, Eraser, ZoomIn, ZoomOut } from 'lucide-react'
 import { useThemeStore } from '../store/themeStore'
 import { useDrawingStore } from '../store/drawingStore'
 import { useExportStore } from '../store/exportStore'
 import { useBoardStore } from '../store/boardStore'
+import { useGridStore } from '../store/gridStore'
+import { scheduleConnectionUpdate } from './Connections'
 
 /**
  * Minimal vertical side dock shown only in presentation mode.
- * Provides: Draw, Erase, Connect/Disconnect, Export.
+ * Provides: Draw, Erase, Connect/Disconnect.
  */
 export function PresentationDock() {
   const isDark = useThemeStore((s) => s.isDark)
   const { isDrawing, toggleDrawing, isErasing, toggleEraser } = useDrawingStore()
   const { openExportModal } = useExportStore()
   const currentBoardId = useBoardStore((s) => s.currentBoardId)
+  const zoom = useGridStore((s) => s.zoom)
+  const setZoom = useGridStore((s) => s.setZoom)
   const [hoveredId, setHoveredId] = useState<string | null>(null)
+
+  const handleZoomIn = () => {
+    setZoom(Math.min(2, Math.round((zoom + 0.1) * 100) / 100))
+    scheduleConnectionUpdate()
+  }
+  const handleZoomOut = () => {
+    setZoom(Math.max(0.25, Math.round((zoom - 0.1) * 100) / 100))
+    scheduleConnectionUpdate()
+  }
+  const handleZoomReset = () => {
+    setZoom(1)
+    scheduleConnectionUpdate()
+  }
 
   const tools = [
     {
@@ -34,14 +51,32 @@ export function PresentationDock() {
       activeColor: 'text-orange-500',
     },
     {
-      id: 'export',
-      icon: Download,
-      label: 'Export',
-      onClick: openExportModal,
+      id: 'zoom-out',
+      icon: ZoomOut,
+      label: `Zoom Out (${Math.round(zoom * 100)}%)`,
+      onClick: handleZoomOut,
       isActive: false,
       activeColor: '',
+      disabled: zoom <= 0.25,
     },
-  ]
+    {
+      id: 'zoom-reset',
+      label: `${Math.round(zoom * 100)}%`,
+      onClick: handleZoomReset,
+      isActive: false,
+      activeColor: '',
+      isText: true,
+    },
+    {
+      id: 'zoom-in',
+      icon: ZoomIn,
+      label: `Zoom In (${Math.round(zoom * 100)}%)`,
+      onClick: handleZoomIn,
+      isActive: false,
+      activeColor: '',
+      disabled: zoom >= 2,
+    },
+  ] as const
 
   if (!currentBoardId || isDrawing) return null
 
@@ -57,10 +92,11 @@ export function PresentationDock() {
         <button
           key={tool.id}
           onClick={tool.onClick}
+          disabled={'disabled' in tool ? !!tool.disabled : false}
           onPointerEnter={(e) => { if (e.pointerType !== 'touch') setHoveredId(tool.id) }}
           onPointerLeave={(e) => { if (e.pointerType !== 'touch') setHoveredId(null) }}
           onTouchEnd={() => setHoveredId(null)}
-          className={`relative p-2.5 rounded-xl transition-all duration-200 ${
+          className={`relative p-2.5 rounded-xl transition-all duration-200 disabled:opacity-30 disabled:cursor-not-allowed ${
             tool.isActive
               ? `${tool.activeColor} ${isDark ? 'bg-zinc-700/60' : 'bg-zinc-100'}`
               : isDark
@@ -68,7 +104,11 @@ export function PresentationDock() {
                 : 'text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100'
           }`}
         >
-          <tool.icon size={18} strokeWidth={1.5} />
+          {'isText' in tool && tool.isText ? (
+            <span className="text-[10px] font-bold min-w-[18px] text-center block">{tool.label}</span>
+          ) : 'icon' in tool && tool.icon ? (
+            <tool.icon size={18} strokeWidth={1.5} />
+          ) : null}
 
           {/* Tooltip — left side */}
           <div

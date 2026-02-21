@@ -54,7 +54,8 @@ export async function POST(
       metadata: {
         bordId: bord._id.toString(),
         taskAssignmentId: assignment._id.toString(),
-        bordTitle: bord.title,        
+        bordTitle: bord.title,
+        organizationId: bord.organizationId?.toString(),
         sourceType: assignment.sourceType,
         sourceId: assignment.sourceId,
       },

@@ -1,15 +1,29 @@
 import mongoose, { Schema, Model, Types } from 'mongoose'
 
+export interface IAccessEntry {
+  userId: Types.ObjectId
+  permission: 'view' | 'edit'
+}
+
 export interface IBord {
   _id: string
   organizationId: Types.ObjectId
   localBoardId: string
   title: string
   ownerId: Types.ObjectId
+  accessList: IAccessEntry[]
   lastPublishedAt: Date | null
   createdAt: Date
   updatedAt: Date
 }
+
+const AccessEntrySchema = new Schema<IAccessEntry>(
+  {
+    userId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+    permission: { type: String, enum: ['view', 'edit'], default: 'view' },
+  },
+  { _id: false }
+)
 
 const BordSchema = new Schema<IBord>(
   {
@@ -34,6 +48,7 @@ const BordSchema = new Schema<IBord>(
       required: true,
       index: true,
     },
+    accessList: [AccessEntrySchema],
     lastPublishedAt: {
       type: Date,
       default: null,

@@ -14,14 +14,21 @@ export interface OrganizationDTO {
   createdAt: string
 }
 
+export interface AccessEntryDTO {
+  userId: string
+  permission: 'view' | 'edit'
+}
+
 export interface BordDTO {
   _id: string
   organizationId: string
   localBoardId: string
   title: string
   ownerId: string
+  accessList: AccessEntryDTO[]
   lastPublishedAt: string | null
   createdAt: string
+  role?: 'owner' | 'collaborator' | 'member'
 }
 
 export interface EmployeeDTO {
@@ -86,7 +93,7 @@ export interface TaskAssignmentDTO {
 export interface NotificationDTO {
   _id: string
   userId: string
-  type: 'task_assigned' | 'task_unassigned' | 'task_reassigned' | 'task_completed' | 'task_updated' | 'org_invitation' | 'invitation_accepted'
+  type: 'task_assigned' | 'task_unassigned' | 'task_reassigned' | 'task_completed' | 'task_updated' | 'org_invitation' | 'invitation_accepted' | 'friend_request' | 'friend_accepted' | 'friend_removed' | 'reminder_due' | 'reminder_overdue'
   title: string
   message: string
   metadata: {
@@ -96,6 +103,8 @@ export interface NotificationDTO {
     organizationId?: string
     organizationName?: string
     invitationId?: string
+    friendId?: string
+    senderName?: string
     sourceType?: SourceType
     sourceId?: string
   }

@@ -14,6 +14,9 @@ export interface Board {
   drawings: string[] // IDs of drawings
   kanbans: string[] // IDs of kanban boards
   medias: string[] // IDs of media items
+  reminders: string[] // IDs of reminders
+  contextType?: 'personal' | 'organization' // Workspace context
+  organizationId?: string // Organization ID if contextType is 'organization'
   backgroundImage?: string // Data URL of background image
   backgroundColor?: string // Solid background color
   backgroundOverlay?: boolean // Semi-transparent blur overlay
@@ -28,14 +31,14 @@ interface BoardStore {
   isBoardsPanelOpen: boolean
   isBackgroundModalOpen: boolean
   setCurrentUserId: (userId: string | null) => void
-  addBoard: (name: string, userId: string) => void
+  addBoard: (name: string, userId: string, context?: { contextType: 'personal' | 'organization'; organizationId?: string }) => void
   deleteBoard: (id: string) => void
   updateBoard: (id: string, updates: Partial<Board>) => void
   setCurrentBoard: (id: string) => void
   toggleBoardsPanel: () => void
   setBoardsPanelOpen: (open: boolean) => void
-  addItemToBoard: (boardId: string, itemType: 'notes' | 'checklists' | 'texts' | 'connections' | 'drawings' | 'kanbans' | 'medias', itemId: string) => void
-  removeItemFromBoard: (boardId: string, itemType: 'notes' | 'checklists' | 'texts' | 'connections' | 'drawings' | 'kanbans' | 'medias', itemId: string) => void
+  addItemToBoard: (boardId: string, itemType: 'notes' | 'checklists' | 'texts' | 'connections' | 'drawings' | 'kanbans' | 'medias' | 'reminders', itemId: string) => void
+  removeItemFromBoard: (boardId: string, itemType: 'notes' | 'checklists' | 'texts' | 'connections' | 'drawings' | 'kanbans' | 'medias' | 'reminders', itemId: string) => void
   addMediaToBoard: (boardId: string, mediaId: string) => void
   updateBoardBackground: (boardId: string, backgroundImage: string | undefined) => void
   updateBoardBackgroundColor: (boardId: string, backgroundColor: string | undefined) => void
@@ -57,7 +60,7 @@ export const useBoardStore = create<BoardStore>()(
       isBoardsPanelOpen: false,
       isBackgroundModalOpen: false,
       setCurrentUserId: (userId) => set({ currentUserId: userId }),
-      addBoard: (name, userId) => {
+      addBoard: (name, userId, context) => {
         const newBoardId = Date.now().toString()
         set((state) => {
           const userBoards = state.boards.filter(b => b.userId === userId)
@@ -74,7 +77,10 @@ export const useBoardStore = create<BoardStore>()(
               connections: [],
               drawings: [],
               kanbans: [],
-              medias: []
+              medias: [],
+              reminders: [],
+              ...(context?.contextType && { contextType: context.contextType }),
+              ...(context?.organizationId && { organizationId: context.organizationId }),
             }],
             currentBoardId: userBoards.length === 0 ? newBoardId : state.currentBoardId
           }
@@ -92,11 +98,6 @@ export const useBoardStore = create<BoardStore>()(
           const mediaIds = boardToDelete.medias
           const drawingIds = boardToDelete.drawings
           
-          // Import stores and delete items
-          // Note: We'll need to call these from the component level
-          // For now, we'll just remove the board and items will be orphaned
-          // The component will handle calling the delete functions
-          
           // Store the items to delete
           if (typeof window !== 'undefined') {
             window.dispatchEvent(new CustomEvent('boardDeleted', { 
@@ -112,12 +113,26 @@ export const useBoardStore = create<BoardStore>()(
             }))
           }
         }
+
+        const remaining = state.boards.filter((board) => board.id !== id)
+
+        // Pick a replacement board from the SAME workspace context
+        let nextBoardId: string | null = null
+        if (state.currentBoardId === id && remaining.length > 0 && boardToDelete) {
+          const sameContext = remaining.filter(b => {
+            if (boardToDelete.contextType === 'organization') {
+              return b.contextType === 'organization' && b.organizationId === boardToDelete.organizationId
+            }
+            return !b.contextType || b.contextType === 'personal'
+          })
+          nextBoardId = sameContext.length > 0 ? sameContext[0].id : null
+        } else {
+          nextBoardId = state.currentBoardId === id ? null : state.currentBoardId
+        }
         
         return {
-          boards: state.boards.filter((board) => board.id !== id),
-          currentBoardId: state.currentBoardId === id ? 
-            (state.boards.length > 1 ? state.boards.filter(b => b.id !== id)[0]?.id : null) : 
-            state.currentBoardId
+          boards: remaining,
+          currentBoardId: nextBoardId
         }
       }),
       updateBoard: (id, updates) => set((state) => ({

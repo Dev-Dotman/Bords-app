@@ -18,14 +18,21 @@ import {
   LayoutGrid,
   ArrowLeft,
   Star,
+  User as UserIcon,
+  Send,
+  Check,
+  X,
+  Mail,
 } from 'lucide-react'
 import { useThemeStore } from '@/store/themeStore'
+import { useDelegationStore } from '@/store/delegationStore'
+import { useOrganizationStore } from '@/store/organizationStore'
 import { motion, AnimatePresence } from 'framer-motion'
 
 interface TaskItem {
   _id: string
-  bordId: string
-  bordTitle: string
+  bordId: string | null
+  bordTitle: string | null
   sourceType: string
   sourceId: string
   content: string
@@ -38,6 +45,7 @@ interface TaskItem {
   columnId: string | null
   columnTitle: string | null
   availableColumns: { id: string; title: string }[]
+  contextType?: 'personal' | 'organization'
   assigner?: { firstName: string; lastName: string }
 }
 
@@ -53,24 +61,38 @@ const PRIORITY_MAP: Record<string, { label: string; color: string; darkColor: st
 }
 
 type FilterTab = 'all' | 'checklist' | 'kanban' | 'completed'
+type ContextTab = 'work' | 'personal'
 
 export default function ExecutionInbox() {
   const { data: session, status } = useSession()
   const router = useRouter()
   const isDark = useThemeStore((s) => s.isDark)
   const [taskGroups, setTaskGroups] = useState<OrgTaskGroup[]>([])
+  const [personalTasks, setPersonalTasks] = useState<TaskItem[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [completingId, setCompletingId] = useState<string | null>(null)
   const [movingId, setMovingId] = useState<string | null>(null)
   const [columnDropdownId, setColumnDropdownId] = useState<string | null>(null)
   const [filter, setFilter] = useState<FilterTab>('all')
+  const [contextTab, setContextTab] = useState<ContextTab>('work')
   const [expandedOrg, setExpandedOrg] = useState<string | null>(null)
+
+  // Invitation support
+  const { notifications, fetchNotifications, acceptInvitation, declineInvitation } = useDelegationStore()
+  const { fetchOrganizations } = useOrganizationStore()
+  const [acceptingInviteId, setAcceptingInviteId] = useState<string | null>(null)
+  const [acceptedInviteIds, setAcceptedInviteIds] = useState<Set<string>>(new Set())
+
+  // Pending org invitations (unread, not yet accepted in this session)
+  const pendingInvitations = notifications.filter(
+    (n) => n.type === 'org_invitation' && !n.isRead && !acceptedInviteIds.has(n._id)
+  )
 
   useEffect(() => {
     if (status === 'unauthenticated') router.push('/login')
   }, [status, router])
 
-  useEffect(() => { fetchTasks() }, [])
+  useEffect(() => { fetchTasks(); fetchNotifications() }, [])
 
   useEffect(() => {
     const handleClick = () => setColumnDropdownId(null)
@@ -87,9 +109,14 @@ export default function ExecutionInbox() {
       const data = await res.json()
       if (res.ok) {
         setTaskGroups(data.tasksByOrganization || [])
+        setPersonalTasks(data.personalTasks || [])
         // Auto-expand first org
         if (data.tasksByOrganization?.length > 0) {
           setExpandedOrg(data.tasksByOrganization[0].organization._id)
+        }
+        // Auto-select context based on what has tasks
+        if ((data.personalTasks || []).length > 0 && (data.tasksByOrganization || []).length === 0) {
+          setContextTab('personal')
         }
       }
     } catch { /* silent */ } finally {
@@ -97,22 +124,38 @@ export default function ExecutionInbox() {
     }
   }
 
-  const handleComplete = async (taskId: string) => {
+  const handleComplete = async (taskId: string, isPersonal = false) => {
     setCompletingId(taskId)
     try {
-      const res = await fetch(`/api/execution/tasks/${taskId}/complete`, { method: 'POST' })
+      const url = isPersonal
+        ? `/api/personal/assignments/${taskId}/complete`
+        : `/api/execution/tasks/${taskId}/complete`
+      const res = await fetch(url, { method: 'POST' })
       if (res.ok) {
         const data = await res.json()
-        setTaskGroups((prev) =>
-          prev.map((group) => ({
-            ...group,
-            tasks: group.tasks.map((task) =>
+        const updatedStatus = data.task?.status || data.assignment?.status
+        const updatedCompletedAt = data.task?.completedAt || data.assignment?.completedAt || null
+
+        if (isPersonal) {
+          setPersonalTasks((prev) =>
+            prev.map((task) =>
               task._id === taskId
-                ? { ...task, status: data.task.status, completedAt: data.task.completedAt || null }
+                ? { ...task, status: updatedStatus, completedAt: updatedCompletedAt }
                 : task
-            ),
-          }))
-        )
+            )
+          )
+        } else {
+          setTaskGroups((prev) =>
+            prev.map((group) => ({
+              ...group,
+              tasks: group.tasks.map((task) =>
+                task._id === taskId
+                  ? { ...task, status: updatedStatus, completedAt: updatedCompletedAt }
+                  : task
+              ),
+            }))
+          )
+        }
       }
     } catch { /* silent */ } finally {
       setCompletingId(null)
@@ -136,6 +179,27 @@ export default function ExecutionInbox() {
               task._id === taskId ? { ...task, columnId: newColumnId, columnTitle: newColumnTitle } : task
             ),
           }))
+        )
+      }
+    } catch { /* silent */ } finally {
+      setMovingId(null)
+    }
+  }
+
+  const handlePersonalMoveColumn = async (taskId: string, newColumnId: string, newColumnTitle: string) => {
+    setMovingId(taskId)
+    setColumnDropdownId(null)
+    try {
+      const res = await fetch(`/api/personal/assignments/${taskId}/update`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ columnId: newColumnId, columnTitle: newColumnTitle }),
+      })
+      if (res.ok) {
+        setPersonalTasks((prev) =>
+          prev.map((task) =>
+            task._id === taskId ? { ...task, columnId: newColumnId, columnTitle: newColumnTitle } : task
+          )
         )
       }
     } catch { /* silent */ } finally {
@@ -175,6 +239,15 @@ export default function ExecutionInbox() {
   const pendingTasks = allTasks.filter((t) => t.status === 'assigned')
   const completedTasks = allTasks.filter((t) => t.status === 'completed')
 
+  // Personal task counts
+  const personalChecklistTasks = personalTasks.filter((t) => t.sourceType === 'checklist_item')
+  const personalKanbanTasks = personalTasks.filter((t) => t.sourceType === 'kanban_task')
+  const pendingPersonal = personalTasks.filter((t) => t.status === 'assigned')
+  const completedPersonal = personalTasks.filter((t) => t.status === 'completed')
+
+  // Active context count for subtitle (include invitations in personal count)
+  const activePendingCount = contextTab === 'personal' ? pendingPersonal.length + pendingInvitations.length : pendingTasks.length
+
   // Filter logic — clean separation
   const filterTask = (task: TaskItem): boolean => {
     switch (filter) {
@@ -186,12 +259,40 @@ export default function ExecutionInbox() {
     }
   }
 
-  const tabs: { key: FilterTab; label: string; count: number }[] = [
+  // Personal filter: supports checklist/kanban/completed
+  const filterPersonalTask = (task: TaskItem): boolean => {
+    switch (filter) {
+      case 'checklist': return task.sourceType === 'checklist_item' && task.status === 'assigned'
+      case 'kanban': return task.sourceType === 'kanban_task' && task.status === 'assigned'
+      case 'completed': return task.status === 'completed'
+      case 'all':
+      default: return task.status === 'assigned'
+    }
+  }
+
+  // Reset filter when switching context — no need to reset anymore since both support all tabs
+  const handleContextSwitch = (tab: ContextTab) => {
+    setContextTab(tab)
+  }
+
+  const workTabs: { key: FilterTab; label: string; count: number }[] = [
     { key: 'all', label: 'Inbox', count: pendingTasks.length },
     { key: 'checklist', label: 'Checklists', count: checklistTasks.filter(t => t.status === 'assigned').length },
     { key: 'kanban', label: 'Kanban', count: kanbanTasks.filter(t => t.status === 'assigned').length },
     { key: 'completed', label: 'Done', count: completedTasks.length },
   ]
+
+  const personalFilterTabs: { key: FilterTab; label: string; count: number }[] = [
+    { key: 'all', label: 'Inbox', count: pendingPersonal.length + pendingInvitations.length },
+    { key: 'checklist', label: 'Checklists', count: personalChecklistTasks.filter(t => t.status === 'assigned').length },
+    { key: 'kanban', label: 'Kanban', count: personalKanbanTasks.filter(t => t.status === 'assigned').length },
+    { key: 'completed', label: 'Done', count: completedPersonal.length },
+  ]
+
+  const tabs = contextTab === 'personal' ? personalFilterTabs : workTabs
+
+  // Whether to show context switcher (only if user has content in both)
+  const showContextSwitcher = true
 
   if (status === 'loading' || isLoading) {
     return (
@@ -227,11 +328,44 @@ export default function ExecutionInbox() {
                   Inbox
                 </h1>
                 <p className={`text-xs sm:text-[11px] mt-0.5 ${isDark ? 'text-zinc-500' : 'text-zinc-400'}`}>
-                  {pendingTasks.length} pending
+                  {activePendingCount} pending
                 </p>
               </div>
             </div>
           </div>
+
+          {/* Context switcher: Work / Personal */}
+          {showContextSwitcher && (
+            <div className={`flex gap-1 pt-1 pb-1.5 ${isDark ? '' : ''}`}>
+              {([{ key: 'work' as ContextTab, label: 'Work', icon: Building2, count: pendingTasks.length }, { key: 'personal' as ContextTab, label: 'Personal', icon: UserIcon, count: pendingPersonal.length + pendingInvitations.length }]).map(({ key, label, icon: Icon, count }) => (
+                <button
+                  key={key}
+                  onClick={() => handleContextSwitch(key)}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-medium transition-all ${
+                    contextTab === key
+                      ? isDark
+                        ? 'bg-zinc-700 text-white'
+                        : 'bg-zinc-900 text-white'
+                      : isDark
+                        ? 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800'
+                        : 'text-zinc-400 hover:text-zinc-600 hover:bg-zinc-100'
+                  }`}
+                >
+                  <Icon size={13} />
+                  {label}
+                  {count > 0 && (
+                    <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-semibold ${
+                      contextTab === key
+                        ? isDark ? 'bg-zinc-600 text-zinc-200' : 'bg-zinc-700 text-zinc-200'
+                        : isDark ? 'bg-zinc-800 text-zinc-500' : 'bg-zinc-100 text-zinc-400'
+                    }`}>
+                      {count}
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
+          )}
 
           {/* Row 2: Filter tabs — Gmail-style category tabs */}
           <div className="flex border-b-0 -mb-px overflow-x-auto scrollbar-none">
@@ -278,89 +412,254 @@ export default function ExecutionInbox() {
 
       {/* Task List */}
       <main className="max-w-3xl mx-auto pb-8">
-        {taskGroups.length === 0 ? (
-          <div className="text-center py-24 px-6">
-            <Inbox size={44} className={`mx-auto mb-4 ${isDark ? 'text-zinc-700' : 'text-zinc-300'}`} />
-            <h2 className={`text-lg sm:text-base font-semibold mb-1.5 ${isDark ? 'text-zinc-400' : 'text-zinc-600'}`}>
-              No tasks or messages yet
-            </h2>
-            <p className={`text-sm ${isDark ? 'text-zinc-600' : 'text-zinc-400'}`}>
-              Your tasks will also appear here
-            </p>
-          </div>
-        ) : (
-          <div>
-            {taskGroups.map((group) => {
-              const filteredTasks = group.tasks.filter(filterTask)
-              if (filteredTasks.length === 0) return null
-
-              const isExpanded = expandedOrg === group.organization._id || expandedOrg === null
-
-              // Sort: overdue first, then by due date, then by priority
-              const sorted = [...filteredTasks].sort((a, b) => {
-                // Priority order: high > normal > low
-                const priOrder = { high: 0, normal: 1, low: 2 }
-                const aPri = priOrder[a.priority] ?? 1
-                const bPri = priOrder[b.priority] ?? 1
-                if (aPri !== bPri) return aPri - bPri
-                // Then by due date (earliest first, null last)
-                if (a.dueDate && !b.dueDate) return -1
-                if (!a.dueDate && b.dueDate) return 1
-                if (a.dueDate && b.dueDate) return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime()
-                return 0
-              })
-
-              return (
-                <div key={group.organization._id}>
-                  {/* Organization header — collapsible */}
-                  <button
-                    onClick={() => setExpandedOrg(isExpanded ? (expandedOrg === null ? group.organization._id : null) : group.organization._id)}
-                    className={`w-full flex items-center gap-2 px-4 sm:px-5 py-3 sm:py-2.5 text-left transition-colors ${
-                      isDark ? 'bg-zinc-800/50 hover:bg-zinc-800' : 'bg-zinc-100/80 hover:bg-zinc-100'
-                    }`}
-                  >
-                    <Building2 size={14} className={isDark ? 'text-zinc-500' : 'text-zinc-400'} />
-                    <span className={`text-[13px] sm:text-xs font-semibold flex-1 ${isDark ? 'text-zinc-400' : 'text-zinc-500'}`}>
-                      {group.organization.name}
-                    </span>
-                    <span className={`text-[11px] sm:text-[10px] font-medium ${isDark ? 'text-zinc-600' : 'text-zinc-400'}`}>
-                      {filteredTasks.length}
-                    </span>
-                    <ChevronDown size={14} className={`transition-transform ${isDark ? 'text-zinc-600' : 'text-zinc-400'} ${isExpanded ? '' : '-rotate-90'}`} />
-                  </button>
-
-                  {/* Task rows */}
-                  <AnimatePresence>
-                    {isExpanded && sorted.map((task) => (
-                      <TaskRow
-                        key={task._id}
-                        task={task}
-                        isDark={isDark}
-                        completingId={completingId}
-                        movingId={movingId}
-                        columnDropdownId={columnDropdownId}
-                        onComplete={handleComplete}
-                        onMoveColumn={handleMoveColumn}
-                        onToggleDropdown={(id) => setColumnDropdownId(columnDropdownId === id ? null : id)}
-                        formatDate={formatDate}
-                        formatCreatedDate={formatCreatedDate}
-                      />
-                    ))}
-                  </AnimatePresence>
+        {/* ─── Personal Context ─── */}
+        {contextTab === 'personal' ? (
+          <>
+            {/* ─── Pending Org Invitations ─── */}
+            {(filter === 'all') && pendingInvitations.length > 0 && (
+              <div className={`border-b ${isDark ? 'border-zinc-800' : 'border-zinc-200'}`}>
+                <div className={`flex items-center gap-2 px-4 sm:px-5 py-2.5 ${isDark ? 'bg-zinc-800/50' : 'bg-zinc-100/80'}`}>
+                  <Mail size={14} className={isDark ? 'text-purple-400' : 'text-purple-500'} />
+                  <span className={`text-[13px] sm:text-xs font-semibold flex-1 ${isDark ? 'text-zinc-400' : 'text-zinc-500'}`}>Invitations</span>
+                  <span className={`text-[11px] sm:text-[10px] font-medium ${isDark ? 'text-zinc-600' : 'text-zinc-400'}`}>{pendingInvitations.length}</span>
                 </div>
-              )
-            })}
-
-            {/* Show empty state for current filter */}
-            {taskGroups.every(g => g.tasks.filter(filterTask).length === 0) && (
-              <div className="text-center py-20">
-                <Inbox size={36} className={`mx-auto mb-3 ${isDark ? 'text-zinc-700' : 'text-zinc-300'}`} />
-                <p className={`text-sm font-medium ${isDark ? 'text-zinc-500' : 'text-zinc-400'}`}>
-                  {filter === 'completed' ? 'No completed tasks' : filter === 'checklist' ? 'No checklist tasks' : filter === 'kanban' ? 'No kanban tasks' : 'All caught up!'}
-                </p>
+                <AnimatePresence>
+                  {pendingInvitations.map((invite) => {
+                    const isAccepting = acceptingInviteId === invite._id
+                    return (
+                      <motion.div
+                        key={invite._id}
+                        layout
+                        initial={{ opacity: 0, y: 4 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, height: 0 }}
+                        className={`flex items-start gap-3 px-3 py-3.5 sm:px-5 sm:py-4 border-b transition-colors ${
+                          isDark ? 'bg-zinc-900 border-zinc-800 hover:bg-zinc-800/60' : 'bg-white border-zinc-200 hover:bg-zinc-50'
+                        }`}
+                      >
+                        <div className={`flex-shrink-0 w-9 h-9 rounded-xl flex items-center justify-center ${
+                          isDark ? 'bg-purple-500/10' : 'bg-purple-50'
+                        }`}>
+                          <Building2 size={16} className={isDark ? 'text-purple-400' : 'text-purple-500'} />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className={`text-[15px] sm:text-sm font-semibold ${isDark ? 'text-zinc-100' : 'text-zinc-900'}`}>
+                            {invite.title}
+                          </p>
+                          <p className={`text-xs mt-0.5 line-clamp-2 ${isDark ? 'text-zinc-400' : 'text-zinc-500'}`}>
+                            {invite.message}
+                          </p>
+                          {invite.metadata?.organizationName && (
+                            <span className={`inline-flex items-center gap-1 mt-1.5 text-[10px] font-medium px-2 py-0.5 rounded-md ${
+                              isDark ? 'bg-purple-500/10 text-purple-400' : 'bg-purple-50 text-purple-600'
+                            }`}>
+                              <Building2 size={10} />
+                              {invite.metadata.organizationName}
+                            </span>
+                          )}
+                          <div className="flex items-center gap-2 mt-2.5">
+                            <button
+                              onClick={async () => {
+                                if (!invite.metadata?.invitationId) return
+                                setAcceptingInviteId(invite._id)
+                                const result = await acceptInvitation(invite.metadata.invitationId)
+                                if (result.success) {
+                                  setAcceptedInviteIds((prev) => new Set(prev).add(invite._id))
+                                  fetchOrganizations()
+                                  fetchNotifications()
+                                }
+                                setAcceptingInviteId(null)
+                              }}
+                              disabled={isAccepting}
+                              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                                isAccepting ? 'opacity-60 cursor-not-allowed' : ''
+                              } bg-emerald-500 hover:bg-emerald-600 text-white`}
+                            >
+                              {isAccepting ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
+                              {isAccepting ? 'Accepting...' : 'Accept'}
+                            </button>
+                            <button
+                              onClick={async () => {
+                                await declineInvitation(invite._id)
+                                fetchNotifications()
+                              }}
+                              disabled={isAccepting}
+                              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                                isDark ? 'bg-zinc-700 hover:bg-zinc-600 text-zinc-300' : 'bg-zinc-100 hover:bg-zinc-200 text-zinc-600'
+                              }`}
+                            >
+                              <X size={12} />
+                              Decline
+                            </button>
+                          </div>
+                        </div>
+                      </motion.div>
+                    )
+                  })}
+                </AnimatePresence>
               </div>
             )}
-          </div>
+
+            {/* ─── Accepted Invitations (success feedback) ─── */}
+            {(filter === 'all') && notifications.filter((n) => n.type === 'org_invitation' && acceptedInviteIds.has(n._id)).map((invite) => (
+              <div
+                key={invite._id}
+                className={`flex items-center gap-3 px-4 py-3 border-b ${
+                  isDark ? 'bg-emerald-900/10 border-zinc-800' : 'bg-emerald-50/50 border-zinc-200'
+                }`}
+              >
+                <CheckCircle2 size={16} className="text-emerald-500" />
+                <span className={`text-sm font-medium ${isDark ? 'text-emerald-400' : 'text-emerald-600'}`}>
+                  Joined {invite.metadata?.organizationName || 'organization'}
+                </span>
+              </div>
+            ))}
+
+            {/* ─── Personal Tasks ─── */}
+            {personalTasks.length === 0 && pendingInvitations.length === 0 && acceptedInviteIds.size === 0 ? (
+              <div className="text-center py-24 px-6">
+                <UserIcon size={44} className={`mx-auto mb-4 ${isDark ? 'text-zinc-700' : 'text-zinc-300'}`} />
+                <h2 className={`text-lg sm:text-base font-semibold mb-1.5 ${isDark ? 'text-zinc-400' : 'text-zinc-600'}`}>
+                  No personal tasks yet
+                </h2>
+                <p className={`text-sm ${isDark ? 'text-zinc-600' : 'text-zinc-400'}`}>
+                  Personal tasks, checklists, and kanban assignments will appear here
+                </p>
+              </div>
+            ) : personalTasks.length > 0 ? (() => {
+            const filtered = personalTasks.filter(filterPersonalTask)
+            const sorted = [...filtered].sort((a, b) => {
+              const priOrder: Record<string, number> = { high: 0, normal: 1, low: 2 }
+              const aPri = priOrder[a.priority] ?? 1
+              const bPri = priOrder[b.priority] ?? 1
+              if (aPri !== bPri) return aPri - bPri
+              if (a.dueDate && !b.dueDate) return -1
+              if (!a.dueDate && b.dueDate) return 1
+              if (a.dueDate && b.dueDate) return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime()
+              return 0
+            })
+
+            if (sorted.length === 0) {
+              return (
+                <div className="text-center py-20">
+                  <Inbox size={36} className={`mx-auto mb-3 ${isDark ? 'text-zinc-700' : 'text-zinc-300'}`} />
+                  <p className={`text-sm font-medium ${isDark ? 'text-zinc-500' : 'text-zinc-400'}`}>
+                    {filter === 'completed' ? 'No completed tasks' : filter === 'checklist' ? 'No checklist tasks' : filter === 'kanban' ? 'No kanban tasks' : 'All caught up!'}
+                  </p>
+                </div>
+              )
+            }
+
+            return (
+              <div>
+                <AnimatePresence>
+                  {sorted.map((task) => (
+                    <TaskRow
+                      key={task._id}
+                      task={task}
+                      isDark={isDark}
+                      completingId={completingId}
+                      movingId={movingId}
+                      columnDropdownId={columnDropdownId}
+                      onComplete={(id) => handleComplete(id, true)}
+                      onMoveColumn={handlePersonalMoveColumn}
+                      onToggleDropdown={(id) => setColumnDropdownId(columnDropdownId === id ? null : id)}
+                      formatDate={formatDate}
+                      formatCreatedDate={formatCreatedDate}
+                      isPersonal
+                    />
+                  ))}
+                </AnimatePresence>
+              </div>
+            )
+          })() : null}
+          </>
+        ) : (
+          /* ─── Work Context ─── */
+          taskGroups.length === 0 ? (
+            <div className="text-center py-24 px-6">
+              <Inbox size={44} className={`mx-auto mb-4 ${isDark ? 'text-zinc-700' : 'text-zinc-300'}`} />
+              <h2 className={`text-lg sm:text-base font-semibold mb-1.5 ${isDark ? 'text-zinc-400' : 'text-zinc-600'}`}>
+                No tasks or messages yet
+              </h2>
+              <p className={`text-sm ${isDark ? 'text-zinc-600' : 'text-zinc-400'}`}>
+                Your tasks will also appear here
+              </p>
+            </div>
+          ) : (
+            <div>
+              {taskGroups.map((group) => {
+                const filteredTasks = group.tasks.filter(filterTask)
+                if (filteredTasks.length === 0) return null
+
+                const isExpanded = expandedOrg === group.organization._id || expandedOrg === null
+
+                // Sort: overdue first, then by due date, then by priority
+                const sorted = [...filteredTasks].sort((a, b) => {
+                  // Priority order: high > normal > low
+                  const priOrder: Record<string, number> = { high: 0, normal: 1, low: 2 }
+                  const aPri = priOrder[a.priority] ?? 1
+                  const bPri = priOrder[b.priority] ?? 1
+                  if (aPri !== bPri) return aPri - bPri
+                  // Then by due date (earliest first, null last)
+                  if (a.dueDate && !b.dueDate) return -1
+                  if (!a.dueDate && b.dueDate) return 1
+                  if (a.dueDate && b.dueDate) return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime()
+                  return 0
+                })
+
+                return (
+                  <div key={group.organization._id}>
+                    {/* Organization header — collapsible */}
+                    <button
+                      onClick={() => setExpandedOrg(isExpanded ? (expandedOrg === null ? group.organization._id : null) : group.organization._id)}
+                      className={`w-full flex items-center gap-2 px-4 sm:px-5 py-3 sm:py-2.5 text-left transition-colors ${
+                        isDark ? 'bg-zinc-800/50 hover:bg-zinc-800' : 'bg-zinc-100/80 hover:bg-zinc-100'
+                      }`}
+                    >
+                      <Building2 size={14} className={isDark ? 'text-zinc-500' : 'text-zinc-400'} />
+                      <span className={`text-[13px] sm:text-xs font-semibold flex-1 ${isDark ? 'text-zinc-400' : 'text-zinc-500'}`}>
+                        {group.organization.name}
+                      </span>
+                      <span className={`text-[11px] sm:text-[10px] font-medium ${isDark ? 'text-zinc-600' : 'text-zinc-400'}`}>
+                        {filteredTasks.length}
+                      </span>
+                      <ChevronDown size={14} className={`transition-transform ${isDark ? 'text-zinc-600' : 'text-zinc-400'} ${isExpanded ? '' : '-rotate-90'}`} />
+                    </button>
+
+                    {/* Task rows */}
+                    <AnimatePresence>
+                      {isExpanded && sorted.map((task) => (
+                        <TaskRow
+                          key={task._id}
+                          task={task}
+                          isDark={isDark}
+                          completingId={completingId}
+                          movingId={movingId}
+                          columnDropdownId={columnDropdownId}
+                          onComplete={(id) => handleComplete(id, false)}
+                          onMoveColumn={handleMoveColumn}
+                          onToggleDropdown={(id) => setColumnDropdownId(columnDropdownId === id ? null : id)}
+                          formatDate={formatDate}
+                          formatCreatedDate={formatCreatedDate}
+                        />
+                      ))}
+                    </AnimatePresence>
+                  </div>
+                )
+              })}
+
+              {/* Show empty state for current filter */}
+              {taskGroups.every(g => g.tasks.filter(filterTask).length === 0) && (
+                <div className="text-center py-20">
+                  <Inbox size={36} className={`mx-auto mb-3 ${isDark ? 'text-zinc-700' : 'text-zinc-300'}`} />
+                  <p className={`text-sm font-medium ${isDark ? 'text-zinc-500' : 'text-zinc-400'}`}>
+                    {filter === 'completed' ? 'No completed tasks' : filter === 'checklist' ? 'No checklist tasks' : filter === 'kanban' ? 'No kanban tasks' : 'All caught up!'}
+                  </p>
+                </div>
+              )}
+            </div>
+          )
         )}
       </main>
     </div>
@@ -379,6 +678,7 @@ function TaskRow({
   onToggleDropdown,
   formatDate,
   formatCreatedDate,
+  isPersonal = false,
 }: {
   task: TaskItem
   isDark: boolean
@@ -390,6 +690,7 @@ function TaskRow({
   onToggleDropdown: (id: string) => void
   formatDate: (d: string) => { text: string; overdue: boolean }
   formatCreatedDate: (d: string) => string
+  isPersonal?: boolean
 }) {
   const isCompleted = task.status === 'completed'
   const isCompleting = completingId === task._id
@@ -438,11 +739,13 @@ function TaskRow({
 
         {/* Type icon */}
         <div className={`flex-shrink-0 w-7 h-7 sm:w-7 sm:h-7 rounded-lg sm:rounded-md flex items-center justify-center ${
-          isKanban
-            ? isDark ? 'bg-zinc-800 text-zinc-400' : 'bg-zinc-100 text-zinc-500'
-            : isDark ? 'bg-zinc-800 text-zinc-400' : 'bg-zinc-100 text-zinc-500'
+          isPersonal
+            ? isDark ? 'bg-violet-500/10 text-violet-400' : 'bg-violet-50 text-violet-500'
+            : isKanban
+              ? isDark ? 'bg-zinc-800 text-zinc-400' : 'bg-zinc-100 text-zinc-500'
+              : isDark ? 'bg-zinc-800 text-zinc-400' : 'bg-zinc-100 text-zinc-500'
         }`}>
-          {isKanban ? <LayoutGrid size={13} /> : <CheckSquare size={13} />}
+          {isPersonal ? <Send size={13} /> : isKanban ? <LayoutGrid size={13} /> : <CheckSquare size={13} />}
         </div>
 
         {/* Main content area */}
@@ -458,9 +761,16 @@ function TaskRow({
               }`}>
                 {task.assigner ? `${task.assigner.firstName}` : 'System'}
               </p>
-              <p className={`text-[10px] truncate ${isDark ? 'text-zinc-600' : 'text-zinc-400'}`}>
-                {task.bordTitle}
-              </p>
+              {!isPersonal && task.bordTitle && (
+                <p className={`text-[10px] truncate ${isDark ? 'text-zinc-600' : 'text-zinc-400'}`}>
+                  {task.bordTitle}
+                </p>
+              )}
+              {isPersonal && (
+                <p className={`text-[10px] truncate ${isDark ? 'text-zinc-600' : 'text-zinc-400'}`}>
+                  Personal
+                </p>
+              )}
             </div>
 
             {/* Task content + meta */}
@@ -488,10 +798,14 @@ function TaskRow({
                 <p className={`text-[12px] truncate ${isDark ? 'text-zinc-500' : 'text-zinc-400'}`}>
                   {task.assigner ? task.assigner.firstName : 'System'}
                 </p>
-                <span className={`text-[12px] ${isDark ? 'text-zinc-700' : 'text-zinc-300'}`}>·</span>
-                <p className={`text-[12px] truncate ${isDark ? 'text-zinc-600' : 'text-zinc-400'}`}>
-                  {task.bordTitle}
-                </p>
+                {!isPersonal && task.bordTitle && (
+                  <>
+                    <span className={`text-[12px] ${isDark ? 'text-zinc-700' : 'text-zinc-300'}`}>·</span>
+                    <p className={`text-[12px] truncate ${isDark ? 'text-zinc-600' : 'text-zinc-400'}`}>
+                      {task.bordTitle}
+                    </p>
+                  </>
+                )}
                 {dueDateInfo && (
                   <>
                     <span className={`text-[12px] ${isDark ? 'text-zinc-700' : 'text-zinc-300'}`}>·</span>

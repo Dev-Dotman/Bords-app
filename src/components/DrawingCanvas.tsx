@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useDrawingStore } from '@/store/drawingStore'
 import { useThemeStore } from '@/store/themeStore'
 import { useBoardStore } from '@/store/boardStore'
+import { useGridStore } from '@/store/gridStore'
 import { Point, DrawingPath, Drawing } from '@/types/drawing'
 import { usePresentationStore } from '@/store/presentationStore'
 import { Eraser, Pencil, Palette, X, Undo2, Redo2 } from 'lucide-react'
@@ -89,6 +90,41 @@ function distToSegment(p: Point, a: Point, b: Point): number {
   return Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy))
 }
 
+// ── SVG Layer (stays inside zoomed items div) ─────────
+export function DrawingSVGLayer() {
+  const drawings = useDrawingStore((s) => s.drawings)
+  const currentBoard = useBoardStore((s) =>
+    s.boards.find((b) => b.id === s.currentBoardId),
+  )
+  const boardDrawings = drawings.filter((d) =>
+    currentBoard?.drawings?.includes(d.id),
+  )
+
+  if (boardDrawings.length === 0) return null
+
+  return (
+    <svg
+      className="absolute inset-0 pointer-events-none"
+      style={{ overflow: 'visible', zIndex: 5 }}
+    >
+      {boardDrawings.map((drawing) =>
+        drawing.paths.map((path) => (
+          <path
+            key={path.id}
+            d={buildSmoothPath(path.points)}
+            stroke={path.color}
+            strokeWidth={path.strokeWidth}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            fill="none"
+            opacity={0.95}
+          />
+        )),
+      )}
+    </svg>
+  )
+}
+
 // ════════════════════════════════════════════════════════
 export function DrawingCanvas() {
   // ── Refs (no re-renders during drawing) ───────────────
@@ -97,6 +133,7 @@ export function DrawingCanvas() {
   const isPointerDownRef = useRef(false)
   const activePointerRef = useRef<number | null>(null)
   const scrollOffsetRef = useRef({ x: 0, y: 0 })
+  const canvasRectRef = useRef({ left: 0, top: 0 })
   const lastScreenPosRef = useRef({ x: 0, y: 0 })
 
   // ── State ─────────────────────────────────────────────
@@ -140,17 +177,25 @@ export function DrawingCanvas() {
 
   // ── Scroll / coordinate helpers ───────────────────────
   const captureScroll = () => {
-    const el = document.querySelector('[data-board-canvas]')
+    const el = document.querySelector('[data-board-canvas]') as HTMLElement
     scrollOffsetRef.current = {
       x: el?.scrollLeft || 0,
       y: el?.scrollTop || 0,
     }
+    const rect = el?.getBoundingClientRect()
+    canvasRectRef.current = {
+      left: rect?.left ?? 0,
+      top: rect?.top ?? 0,
+    }
   }
 
-  const screenToContent = (cx: number, cy: number): Point => ({
-    x: cx + scrollOffsetRef.current.x,
-    y: cy + scrollOffsetRef.current.y,
-  })
+  const screenToContent = (cx: number, cy: number): Point => {
+    const zoom = useGridStore.getState().zoom
+    return {
+      x: ((cx - canvasRectRef.current.left) + scrollOffsetRef.current.x) / zoom,
+      y: ((cy - canvasRectRef.current.top) + scrollOffsetRef.current.y) / zoom,
+    }
+  }
 
   // ── Canvas setup (high-DPI) ───────────────────────────
   useEffect(() => {
@@ -303,7 +348,8 @@ export function DrawingCanvas() {
 
   // ── Stroke eraser ─────────────────────────────────────
   const eraseAtPoint = (contentPt: Point) => {
-    const radius = eraserWidth / 2
+    const zoom = useGridStore.getState().zoom
+    const radius = eraserWidth / (2 * zoom)
     const state = useDrawingStore.getState()
     const bState = useBoardStore.getState()
     const board = bState.boards.find((b) => b.id === bState.currentBoardId)
@@ -411,6 +457,10 @@ export function DrawingCanvas() {
       return
     }
 
+    // Stroke width in content space = screen width / zoom
+    const zoom = useGridStore.getState().zoom
+    const contentStrokeWidth = currentStrokeWidth / zoom
+
     // Single tap = dot
     if (rawPoints.length === 1) {
       const drawingId = Date.now().toString()
@@ -420,7 +470,7 @@ export function DrawingCanvas() {
           id: drawingId + '-p',
           points: rawPoints,
           color: currentColor,
-          strokeWidth: currentStrokeWidth,
+          strokeWidth: contentStrokeWidth,
           timestamp: Date.now(),
         }],
         position: { x: 0, y: 0 },
@@ -441,7 +491,7 @@ export function DrawingCanvas() {
         id: drawingId + '-p',
         points: simplified,
         color: currentColor,
-        strokeWidth: currentStrokeWidth,
+        strokeWidth: contentStrokeWidth,
         timestamp: Date.now(),
       }],
       position: { x: 0, y: 0 },
@@ -468,27 +518,6 @@ export function DrawingCanvas() {
   // ════════════════════════════ RENDER ═══════════════════
   return (
     <>
-      {/* ── SVG Stroke Rendering (absolute, scrolls with board content) ── */}
-      <svg
-        className="absolute inset-0 pointer-events-none"
-        style={{ overflow: 'visible', zIndex: 5 }}
-      >
-        {boardDrawings.map((drawing) =>
-          drawing.paths.map((path) => (
-            <path
-              key={path.id}
-              d={buildSmoothPath(path.points)}
-              stroke={path.color}
-              strokeWidth={path.strokeWidth}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              fill="none"
-              opacity={0.95}
-            />
-          )),
-        )}
-      </svg>
-
       {/* ── Input Overlay (fixed, captures all pointer events) ── */}
       <div
         ref={inputOverlayRef}

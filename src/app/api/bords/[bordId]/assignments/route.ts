@@ -144,7 +144,7 @@ export async function POST(
     return NextResponse.json({
       assignment: {
         _id: existingAssignment._id.toString(),
-        bordId: existingAssignment.bordId.toString(),
+        bordId: existingAssignment.bordId?.toString() || bordId,
         sourceType: existingAssignment.sourceType,
         sourceId: existingAssignment.sourceId,
         content: existingAssignment.content,
@@ -184,7 +184,7 @@ export async function POST(
   return NextResponse.json({
     assignment: {
       _id: assignment._id.toString(),
-      bordId: assignment.bordId.toString(),
+      bordId: assignment.bordId?.toString() || bordId,
       sourceType: assignment.sourceType,
       sourceId: assignment.sourceId,
       content: assignment.content,

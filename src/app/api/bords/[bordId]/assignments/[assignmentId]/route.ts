@@ -53,7 +53,7 @@ export async function PUT(
   return NextResponse.json({
     assignment: {
       _id: assignment._id.toString(),
-      bordId: assignment.bordId.toString(),
+      bordId: assignment.bordId?.toString() || bordId,
       sourceType: assignment.sourceType,
       sourceId: assignment.sourceId,
       content: assignment.content,
