@@ -26,6 +26,7 @@ import {
   ListChecks,
   Calculator,
   Link,
+  Link2,
   Type,
   Eraser,
   X,
@@ -43,6 +44,7 @@ import { KanbanForm } from './KanbanForm'
 import { ReminderForm } from './ReminderForm'
 import { useZIndexStore } from '../store/zIndexStore'
 import { scheduleConnectionUpdate } from './Connections'
+import { useMediaStore } from '../store/mediaStore'
 
 export function Dock() {
   const [hoveredItem, setHoveredItem] = useState<string | number | null>(null);
@@ -69,6 +71,7 @@ export function Dock() {
   const { isDrawing, toggleDrawing, isErasing, toggleEraser } = useDrawingStore()
   const bringToFront = useZIndexStore((state) => state.bringToFront)
   const { isSyncing, lastSyncedAt, syncBoardToCloud } = useBoardSyncStore()
+  const { openMediaModal } = useMediaStore()
   const boardPermission = useBoardSyncStore((s) => s.boardPermissions[currentBoardId || ''] || 'owner')
   const isViewOnly = boardPermission === 'view'
   const zoom = useGridStore((state) => state.zoom)
@@ -241,6 +244,14 @@ export function Dock() {
       label: "Reminder", 
       description: isViewOnly ? "View-only mode" : !currentBoardId ? "Select/create a board to get started" : "Create a reminder",
       onClick: currentBoardId && !isViewOnly ? () => setShowReminderForm(true) : undefined,
+      disabled: !currentBoardId || isViewOnly
+    },
+    { 
+      id: 19, 
+      icon: Link2, 
+      label: "Media", 
+      description: isViewOnly ? "View-only mode" : !currentBoardId ? "Select/create a board to get started" : "Add images & videos",
+      onClick: currentBoardId && !isViewOnly ? openMediaModal : undefined,
       disabled: !currentBoardId || isViewOnly
     },
     { id: 'separator-2', isSeparator: true },

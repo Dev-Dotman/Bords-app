@@ -197,6 +197,7 @@ export default function Home() {
   const panRef = useRef({ active: false, panning: false, x: 0, y: 0, scrollLeft: 0, scrollTop: 0 })
   const panCleanupRef = useRef<(() => void) | null>(null)
   const isDrawing = useDrawingStore((state) => state.isDrawing)
+  const isDrawingPaused = useDrawingStore((state) => state.isPaused)
 
   // Safety cleanup: if component unmounts mid-pan, remove document listeners
   useEffect(() => {
@@ -208,7 +209,7 @@ export default function Home() {
 
   const handleCanvasPanStart = useCallback((e: React.MouseEvent) => {
     if (e.button !== 0) return
-    if (isDrawing || isPresentationMode || isFullScreen) return
+    if ((isDrawing && !isDrawingPaused) || isPresentationMode || isFullScreen) return
     const target = e.target as HTMLElement
     if (target.closest('[data-board-item]') || target.closest('.item-container') || target.closest('[data-ui-control]')) return
 
@@ -255,7 +256,7 @@ export default function Home() {
     document.addEventListener('mousemove', handleMouseMove)
     document.addEventListener('mouseup', handleMouseUp)
     panCleanupRef.current = handleMouseUp
-  }, [isDrawing, isPresentationMode, isFullScreen])
+  }, [isDrawing, isDrawingPaused, isPresentationMode, isFullScreen])
 
   // Detect device type: phone, tablet (portrait/landscape), or desktop
   useEffect(() => {

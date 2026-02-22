@@ -1,12 +1,12 @@
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import {
-  Tags, Users, Command, Brain, Workflow,
-  Image, Download, Link2, Presentation, GitBranch
+  Tags, Handshake, Command, Brain, Workflow,
+  Image, Download, Palette, Presentation, GitBranch
 } from 'lucide-react'
-import { useThemeStore } from '../store/themeStore'
+import { useThemeStore, THEME_COLORS } from '../store/themeStore'
+import { useGridStore } from '../store/gridStore'
 import { usePresentationStore } from '../store/presentationStore'
 import { useExportStore } from '../store/exportStore'
-import { useMediaStore } from '../store/mediaStore'
 import { useBoardStore } from '../store/boardStore'
 import { useConnectionLineStore } from '../store/connectionLineStore'
 import { useBoardSyncStore } from '../store/boardSyncStore'
@@ -19,11 +19,15 @@ export function SideBar() {
   const [hoveredItem, setHoveredItem] = useState<number | null>(null);
   const [showAccessModal, setShowAccessModal] = useState(false)
   const [isLinkingBord, setIsLinkingBord] = useState(false)
+  const [showGridColorPicker, setShowGridColorPicker] = useState(false)
+  const gridPickerRef = useRef<HTMLDivElement>(null)
   const isDark = useThemeStore((state) => state.isDark)
   const { isPresentationMode, togglePresentationMode } = usePresentationStore()
   const { openExportModal } = useExportStore()
-  const { openMediaModal } = useMediaStore()
   const { openBackgroundModal, currentBoardId } = useBoardStore()
+  const gridColor = useGridStore((s) => s.gridColor)
+  const setGridColor = useGridStore((s) => s.setGridColor)
+  const [customGridColor, setCustomGridColor] = useState(gridColor)
   const currentBoard = useBoardStore(s => s.boards.find(b => b.id === currentBoardId))
   const { openModal: openConnectionLineModal } = useConnectionLineStore()
   const boardPermission = useBoardSyncStore((s) => s.boardPermissions[currentBoardId || ''] || 'owner')
@@ -40,14 +44,25 @@ export function SideBar() {
   // Show Collaborate only for org owners; hide entirely for regular members
   const showCollaborate = isOrgContext && isOwnerOfCurrentOrg
 
+  // Close grid color picker on click outside
+  useEffect(() => {
+    const handle = (e: MouseEvent) => {
+      if (gridPickerRef.current && !gridPickerRef.current.contains(e.target as Node)) {
+        setShowGridColorPicker(false)
+      }
+    }
+    if (showGridColorPicker) document.addEventListener('mousedown', handle)
+    return () => document.removeEventListener('mousedown', handle)
+  }, [showGridColorPicker])
+
   const toolItems = [
     { id: 1, icon: Image, label: "Custom Backgrounds", description: isViewOnly ? "View-only mode" : !currentBoardId ? "Select/create a board to get started" : "Personalize your board", disabled: !currentBoardId || isViewOnly },
     { id: 2, icon: Download, label: "Export Options", description: !currentBoardId ? "Select/create a board to get started" : "Save as PDF or image (Experimental)", disabled: !currentBoardId, experimental: true },
-    { id: 3, icon: Link2, label: "Media Links", description: isViewOnly ? "View-only mode" : !currentBoardId ? "Select/create a board to get started" : "Add images & videos", disabled: !currentBoardId || isViewOnly },
+    { id: 3, icon: Palette, label: "Grid Colors", description: !currentBoardId ? "Select/create a board to get started" : "Customize grid line colors", disabled: !currentBoardId },
     { id: 4, icon: Presentation, label: "Presentation Mode", description: !currentBoardId ? "Select/create a board to get started" : "Full-screen view", disabled: !currentBoardId },
     { id: 5, icon: GitBranch, label: "Connection Lines", description: isViewOnly ? "View-only mode" : !currentBoardId ? "Select/create a board to get started" : "Customize line colors", disabled: !currentBoardId || isViewOnly },
     // { id: 6, icon: Tags, label: "Tags", description: "Organize & filter", comingSoon: true },
-    ...(showCollaborate ? [{ id: 7, icon: Users, label: "Collaborate", description: !currentBoardId ? "Select/create a board to get started" : isLinkingBord ? "Setting up..." : "Manage team access", disabled: !currentBoardId || isLinkingBord }] : []),
+    ...(showCollaborate ? [{ id: 7, icon: Handshake, label: "Collaborate", description: !currentBoardId ? "Select/create a board to get started" : isLinkingBord ? "Setting up..." : "Manage team access", disabled: !currentBoardId || isLinkingBord }] : []),
     // { id: 8, icon: Command, label: "Commands", description: "Quick actions", comingSoon: true },
     // { id: 9, icon: Brain, label: "AI Helper", description: "Smart suggestions", comingSoon: true },
     { id: 10, icon: Workflow, label: "Automations", description: "Custom triggers", comingSoon: true }
@@ -77,8 +92,8 @@ export function SideBar() {
       }
       
       openExportModal()
-    } else if (itemId === 3) { // Media Links
-      openMediaModal()
+    } else if (itemId === 3) { // Grid Colors
+      setShowGridColorPicker(!showGridColorPicker)
     } else if (itemId === 4) { // Presentation Mode
       togglePresentationMode()
     } else if (itemId === 5) { // Connection Lines
@@ -166,6 +181,65 @@ export function SideBar() {
         </div>
       </div>
     </div>
+
+      {/* Grid Color Picker — opens next to sidebar */}
+      {showGridColorPicker && (
+        <div
+          ref={gridPickerRef}
+          className={`fixed right-24 top-1/2 -translate-y-1/2 p-3 rounded-xl border shadow-xl z-50 w-[260px] ${
+            isDark ? 'bg-zinc-800 border-zinc-700' : 'bg-white border-zinc-200'
+          }`}
+        >
+          <h3 className={`text-sm font-medium mb-2 ${isDark ? 'text-white' : 'text-gray-800'}`}>Grid Colors</h3>
+
+          {/* Custom color input */}
+          <div className={`mb-3 p-3 rounded-lg border ${isDark ? 'bg-zinc-800/50 border-zinc-700' : 'bg-zinc-50 border-zinc-200'}`}>
+            <label className={`block text-xs font-medium mb-2 ${isDark ? 'text-zinc-400' : 'text-zinc-600'}`}>Custom Grid Color</label>
+            <div className="flex items-center gap-3">
+              <input
+                type="color"
+                value={customGridColor}
+                onChange={(e) => { setCustomGridColor(e.target.value); setGridColor(e.target.value) }}
+                className="w-10 h-10 rounded-lg cursor-pointer border-2 border-zinc-300 dark:border-zinc-600"
+              />
+              <input
+                type="text"
+                value={customGridColor}
+                onChange={(e) => {
+                  setCustomGridColor(e.target.value)
+                  if (/^#[0-9A-F]{6}$/i.test(e.target.value)) setGridColor(e.target.value)
+                }}
+                placeholder="#000000"
+                className={`w-full px-2 py-1.5 rounded-lg border font-mono text-xs ${
+                  isDark ? 'bg-zinc-800 border-zinc-700 text-white' : 'bg-white border-zinc-300 text-zinc-900'
+                }`}
+              />
+            </div>
+          </div>
+
+          {/* Presets */}
+          <h4 className={`text-xs font-medium mb-2 ${isDark ? 'text-zinc-400' : 'text-zinc-600'}`}>Quick Presets</h4>
+          <div className="grid grid-cols-6 gap-2">
+            {Object.entries(isDark ? THEME_COLORS.gridColors.dark : THEME_COLORS.gridColors.light).map(([name, { value, label }]) => (
+              <button
+                key={name}
+                onClick={() => { setGridColor(value); setCustomGridColor(value); setShowGridColorPicker(false) }}
+                className="group relative"
+              >
+                <div
+                  className={`w-8 h-8 rounded-lg transition-transform hover:scale-110 ${
+                    isDark ? 'border-2 border-white/10' : 'border border-black/10'
+                  }`}
+                  style={{ backgroundColor: value }}
+                />
+                <span className={`absolute -bottom-1 left-1/2 -translate-x-1/2 text-[10px] opacity-0 group-hover:opacity-100 whitespace-nowrap ${
+                  isDark ? 'text-white' : 'text-gray-600'
+                }`}>{label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Bord Access Modal — triggered by Collaborate button */}
       {showAccessModal && (() => {

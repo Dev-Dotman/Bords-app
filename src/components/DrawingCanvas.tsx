@@ -7,7 +7,7 @@ import { useBoardStore } from '@/store/boardStore'
 import { useGridStore } from '@/store/gridStore'
 import { Point, DrawingPath, Drawing } from '@/types/drawing'
 import { usePresentationStore } from '@/store/presentationStore'
-import { Eraser, Pencil, Palette, X, Undo2, Redo2 } from 'lucide-react'
+import { Eraser, Pencil, Palette, X, Undo2, Redo2, Pause, Play } from 'lucide-react'
 
 // ── Constants ──────────────────────────────────────────
 const COLORS = [
@@ -146,12 +146,14 @@ export function DrawingCanvas() {
   const {
     isDrawing,
     isErasing,
+    isPaused,
     drawings,
     currentColor,
     currentStrokeWidth,
     eraserWidth,
     toggleDrawing,
     toggleEraser,
+    togglePause,
     setColor,
     setStrokeWidth,
     setEraserWidth,
@@ -529,12 +531,12 @@ export function DrawingCanvas() {
         style={{
           position: 'fixed',
           inset: 0,
-          zIndex: isDrawing ? 9990 : -1,
+          zIndex: isDrawing && !isPaused ? 9990 : -1,
           touchAction: 'none',
           WebkitUserSelect: 'none',
           WebkitTouchCallout: 'none',
-          cursor: isDrawing ? (isErasing ? 'none' : 'crosshair') : 'auto',
-          pointerEvents: isDrawing ? 'auto' : 'none',
+          cursor: isDrawing && !isPaused ? (isErasing ? 'none' : 'crosshair') : 'auto',
+          pointerEvents: isDrawing && !isPaused ? 'auto' : 'none',
         } as React.CSSProperties}
       />
 
@@ -799,6 +801,19 @@ export function DrawingCanvas() {
               >
                 <Eraser className="w-3.5 h-3.5" />
                 Clear All
+              </button>
+              <button
+                onClick={togglePause}
+                className={`w-full flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-lg transition-colors text-xs font-medium ${
+                  isPaused
+                    ? 'bg-amber-500 hover:bg-amber-600 text-white'
+                    : isDark
+                      ? 'bg-zinc-700 hover:bg-zinc-600 text-gray-300'
+                      : 'bg-zinc-200 hover:bg-zinc-300 text-gray-700'
+                }`}
+              >
+                {isPaused ? <Play className="w-3.5 h-3.5" /> : <Pause className="w-3.5 h-3.5" />}
+                {isPaused ? 'Resume Drawing' : 'Pause Drawing'}
               </button>
               <button
                 onClick={toggleDrawing}

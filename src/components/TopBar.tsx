@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { Moon, Sun, Share2, User, ChevronRight, Palette, Layout, LogOut, Minimize2, Maximize2, Building2, Cloud, CloudOff, Loader2, Trash2, Inbox, Users, UserPlus, Shield } from 'lucide-react'
+import { Moon, Sun, Share2, User, ChevronRight, Layout, LogOut, Minimize2, Maximize2, Building2, Cloud, CloudOff, Loader2, Trash2, Inbox, Users, UserPlus } from 'lucide-react'
 import { useSession, signOut } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import { useThemeStore, THEME_COLORS } from '../store/themeStore'
@@ -75,20 +75,15 @@ export function TopBar() {
   const router = useRouter()
   const { isDark, toggleDark, colorTheme, setColorTheme } = useThemeStore()
   const [hoveredProfile, setHoveredProfile] = useState<string | null>(null)
-  const [showColorPicker, setShowColorPicker] = useState(false)
   const [showUserMenu, setShowUserMenu] = useState(false)
   const [showCreateOrg, setShowCreateOrg] = useState(false)
   const [showTeamPanel, setShowTeamPanel] = useState(false)
   const [showFriendsPanel, setShowFriendsPanel] = useState(false)
   const [showShareModal, setShowShareModal] = useState(false)
   const [showBoardsTooltip, setShowBoardsTooltip] = useState(false)
-  const [showThemeTooltip, setShowThemeTooltip] = useState(false)
   const [showPresentationTooltip, setShowPresentationTooltip] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [showAccessModal, setShowAccessModal] = useState(false)
-  const setGridColor = useGridStore((state) => state.setGridColor)
-  const gridColor = useGridStore((state) => state.gridColor)
-  const [customGridColor, setCustomGridColor] = useState(gridColor)
   const userMenuRef = useRef<HTMLDivElement>(null)
   const currentBoard = useBoardStore((state) => 
     state.boards.find(board => board.id === state.currentBoardId)
@@ -250,6 +245,19 @@ export function TopBar() {
                     
                     <div className="py-1">
                       <button
+                        onClick={() => {
+                          toggleDark()
+                          setShowUserMenu(false)
+                        }}
+                        className={`w-full px-4 py-2.5 text-left text-sm flex items-center gap-3 transition-colors
+                          ${isDark 
+                            ? 'text-zinc-300 hover:bg-zinc-700/50' 
+                            : 'text-gray-700 hover:bg-zinc-100'}`}
+                      >
+                        {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+                        <span className="font-medium">{isDark ? 'Light Mode' : 'Dark Mode'}</span>
+                      </button>
+                      <button
                         onClick={handleLogout}
                         className={`w-full px-4 py-2.5 text-left text-sm flex items-center gap-3 transition-colors
                           ${isDark 
@@ -265,30 +273,6 @@ export function TopBar() {
               </div>
 
               <div className={`w-px h-5 ${isDark ? 'bg-zinc-700/75' : 'bg-zinc-200/75'} mx-1`} />
-
-              <button
-                onClick={() => {
-                  setShowThemeTooltip(false)
-                  toggleDark()
-                }}
-                onMouseEnter={() => setShowThemeTooltip(true)}
-                onMouseLeave={() => setShowThemeTooltip(false)}
-                className={`relative p-1.5 rounded-lg transition-colors
-                  ${isDark 
-                    ? 'hover:bg-zinc-700/50 text-zinc-400 hover:text-zinc-200' 
-                    : 'hover:bg-zinc-100 text-zinc-600 hover:text-zinc-900'}`}
-              >
-                {isDark ? <Moon size={20} /> : <Sun size={20} />}
-                {/* Tooltip */}
-                <div className={`
-                  absolute top-full mt-2 left-1/2 -translate-x-1/2 whitespace-nowrap
-                  ${isDark ? 'bg-zinc-700' : 'bg-zinc-800'} text-white px-3 py-1.5 rounded-lg
-                  text-xs font-medium transition-all duration-200 pointer-events-none shadow-lg
-                  ${showThemeTooltip ? 'opacity-100 scale-100' : 'opacity-0 scale-95'}
-                `}>
-                  {isDark ? 'Light Mode' : 'Dark Mode'}
-                </div>
-              </button>
 
               {/* Workspace Context Switcher */}
               <div className={`w-px h-5 ${isDark ? 'bg-zinc-700/75' : 'bg-zinc-200/75'} mx-1`} />
@@ -381,7 +365,6 @@ export function TopBar() {
           <button
             onClick={() => {
               setShowPresentationTooltip(false)
-              setShowThemeTooltip(false)
               setShowBoardsTooltip(false)
               togglePresentationMode()
             }}
@@ -439,22 +422,6 @@ export function TopBar() {
               }`}>
                 EDITOR
               </span>
-            )}
-            {!isPresentationMode && isOrgContext && isOwnerOfCurrentOrg && (
-              <button
-                onClick={handleAccessClick}
-                disabled={isLinkingBord}
-                className={`p-1 rounded-md transition-colors flex-shrink-0 ${
-                  isDark
-                    ? 'hover:bg-blue-500/20 text-zinc-500 hover:text-blue-400'
-                    : 'hover:bg-blue-50 text-zinc-400 hover:text-blue-500'
-                } ${isLinkingBord ? 'opacity-50' : ''}`}
-                title="Manage team access"
-              >
-                {isLinkingBord
-                  ? <Loader2 size={13} className="animate-spin" />
-                  : <Shield size={13} />}
-              </button>
             )}
             {!isPresentationMode && boardPermission === 'owner' && (
               <button
@@ -526,117 +493,6 @@ export function TopBar() {
             </button>
           )}
 
-          <button
-            onClick={() => setShowColorPicker(!showColorPicker)}
-            className={`p-2 rounded-lg shadow-lg backdrop-blur-sm border
-              ${isDark 
-                ? 'bg-zinc-800/90 border-zinc-700/50 text-zinc-400 hover:text-zinc-200' 
-                : 'bg-white/90 border-zinc-200/50 text-zinc-600 hover:text-zinc-900'}
-              transition-colors`}
-          >
-            <Palette size={20} />
-          </button>
-
-          {/* Color Picker Dropdown */}
-          {showColorPicker && (
-            <div className="absolute right-0 top-full mt-2 p-3 bg-white dark:bg-zinc-800 rounded-lg shadow-xl border dark:border-zinc-700 w-[280px]">
-              {/* <div className="mb-4">
-                <h3 className="text-sm font-medium mb-2 dark:text-white">Theme Colors</h3>
-                <div className="grid grid-cols-5 gap-2">
-                  {Object.entries(THEME_COLORS)
-                    .filter(([key]) => key !== 'gridColors')
-                    .map(([name, colors]) => (
-                      <button
-                        key={name}
-                        onClick={() => {
-                          setColorTheme(name as keyof typeof THEME_COLORS)
-                        }}
-                        className={`
-                          w-12 h-12 rounded-lg transition-all duration-200
-                          ${('bg' in colors) ? colors.bg : ''} border ${('border' in colors) ? colors.border : ''}
-                          hover:scale-110 hover:shadow-lg
-                          ${colorTheme === name ? 'ring-2 ring-blue-500 ring-offset-2 dark:ring-offset-zinc-800' : ''}
-                        `}
-                      />
-                    ))}
-                </div>
-              </div> */}
-
-              <div>
-                <h3 className="text-sm font-medium mb-2 dark:text-white text-gray-800">Grid Colors</h3>
-                
-                {/* Custom Grid Color Picker */}
-                <div className={`mb-3 p-3 rounded-lg border ${isDark ? 'bg-zinc-800/50 border-zinc-700' : 'bg-zinc-50 border-zinc-200'}`}>
-                  <label className={`block text-xs font-medium mb-2 ${isDark ? 'text-zinc-400' : 'text-zinc-600'}`}>
-                    Custom Grid Color
-                  </label>
-                  <div className="flex items-center gap-3">
-                    <input
-                      type="color"
-                      value={customGridColor}
-                      onChange={(e) => {
-                        setCustomGridColor(e.target.value)
-                        setGridColor(e.target.value)
-                      }}
-                      className="w-12 h-12 rounded-lg cursor-pointer border-2 border-zinc-300 dark:border-zinc-600"
-                    />
-                    <div className="flex-1">
-                      <input
-                        type="text"
-                        value={customGridColor}
-                        onChange={(e) => {
-                          setCustomGridColor(e.target.value)
-                          if (/^#[0-9A-F]{6}$/i.test(e.target.value)) {
-                            setGridColor(e.target.value)
-                          }
-                        }}
-                        placeholder="#000000"
-                        className={`w-full px-2 py-1.5 rounded-lg border font-mono text-xs ${
-                          isDark
-                            ? 'bg-zinc-800 border-zinc-700 text-white'
-                            : 'bg-white border-zinc-300 text-zinc-900'
-                        }`}
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                {/* Preset Grid Colors */}
-                <h4 className={`text-xs font-medium mb-2 ${isDark ? 'text-zinc-400' : 'text-zinc-600'}`}>
-                  Quick Presets
-                </h4>
-                <div className="grid grid-cols-6 gap-2">
-                  {Object.entries(isDark ? THEME_COLORS.gridColors.dark : THEME_COLORS.gridColors.light)
-                    .map(([name, { value, label }]) => (
-                      <button
-                        key={name}
-                        onClick={() => {
-                          setGridColor(value)
-                          setCustomGridColor(value)
-                          setShowColorPicker(false)
-                        }}
-                        className="group relative"
-                      >
-                        <div
-                          className={`
-                            w-8 h-8 rounded-lg transition-transform hover:scale-110
-                            ${isDark ? 'border-2 border-white/10' : 'border border-black/10'}
-                          `}
-                          style={{ backgroundColor: value }}
-                        />
-                        <span className={`
-                          absolute -bottom-1 left-1/2 -translate-x-1/2 text-[10px] 
-                          opacity-0 group-hover:opacity-100 whitespace-nowrap
-                          ${isDark ? 'text-white' : 'text-gray-600'}
-                        `}>
-                          {label}
-                        </span>
-                      </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
         </div>
       </div>
       )}

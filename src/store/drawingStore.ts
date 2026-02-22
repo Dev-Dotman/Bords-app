@@ -7,11 +7,13 @@ interface DrawingStore {
   undoneDrawings: Drawing[]
   isDrawing: boolean
   isErasing: boolean
+  isPaused: boolean
   currentColor: string
   currentStrokeWidth: number
   eraserWidth: number
   toggleDrawing: () => void
   toggleEraser: () => void
+  togglePause: () => void
   setColor: (color: string) => void
   setStrokeWidth: (width: number) => void
   setEraserWidth: (width: number) => void
@@ -30,13 +32,16 @@ export const useDrawingStore = create<DrawingStore>()(
       undoneDrawings: [],
       isDrawing: false,
       isErasing: false,
+      isPaused: false,
       currentColor: '#000000',
       currentStrokeWidth: 2,
       eraserWidth: 12,
       
-      toggleDrawing: () => set((state) => ({ isDrawing: !state.isDrawing, isErasing: false })),
+      toggleDrawing: () => set((state) => ({ isDrawing: !state.isDrawing, isErasing: false, isPaused: false })),
       
-      toggleEraser: () => set((state) => ({ isErasing: !state.isErasing, isDrawing: true })),
+      toggleEraser: () => set((state) => ({ isErasing: !state.isErasing, isDrawing: true, isPaused: false })),
+      
+      togglePause: () => set((state) => ({ isPaused: !state.isPaused })),
       
       setColor: (color) => set({ currentColor: color }),
       

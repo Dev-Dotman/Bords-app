@@ -190,7 +190,7 @@ export function Connections() {
   const handleClearConnections = () => {
     if (currentBoardId) {
       clearBoardConnections(currentBoardId)
-      toast.success('Cleared all connections for this board')
+      toast.success('Cleared all connections for this board', { duration: 1500 })
     }
   }
 
@@ -319,7 +319,7 @@ export function Connections() {
             onClick={() => {
               removeConnection(alreadyConnected.id)
               clearSelection()
-              toast.success('Items disconnected')
+              toast.success('Items disconnected', { duration: 1500 })
             }}
           >
             <Link2 size={16} />
@@ -338,7 +338,7 @@ export function Connections() {
               const item2Exists = document.querySelector(`[data-node-id="${selectedItems[1].id}"]`)
               
               if (!item1Exists || !item2Exists) {
-                toast.error('Cannot connect: One or more items not found')
+                toast.error('Cannot connect: One or more items not found', { duration: 1500 })
                 return
               }
               
@@ -353,7 +353,7 @@ export function Connections() {
                 },
                 currentBoardId
               )
-              toast.success('Items connected successfully')
+              toast.success('Items connected successfully', { duration: 1500 })
             }}
           >
             <Link2 size={16} />
