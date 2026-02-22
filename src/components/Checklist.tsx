@@ -1,5 +1,6 @@
+'use client'
 import { Trash2, Check, Clock, Pencil, Palette, ChevronDown, ChevronUp, MoreVertical, GripVertical } from 'lucide-react'
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import { useDraggable } from '@dnd-kit/core'
 import { CSS } from '@dnd-kit/utilities'
@@ -358,10 +359,16 @@ export function Checklist({ id, title, items, position, color, width = 320, heig
     return otherRect.left < thisRect.left ? 'left' : 'right'
   }
 
+  const positionRef = useRef(position)
+  positionRef.current = position
+  const stableData = useMemo(() => ({
+    type: 'checklist' as const, id, get position() { return positionRef.current }, width,
+  }), [id, width])
+
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: `checklist-${id}`,
     disabled: !isDragEnabled,
-    data: { type: 'checklist', id, position }
+    data: stableData,
   })
 
   const zoomedTransform = transform ? { ...transform, x: transform.x / zoom, y: transform.y / zoom } : null
@@ -379,6 +386,7 @@ export function Checklist({ id, title, items, position, color, width = 320, heig
     opacity: isDragging ? 0.5 : 1,
     zIndex: isDragging ? 10000 : zIndex,
     borderRadius: `${24 * zoom}px`,
+    willChange: isDragging ? 'transform' as const : 'auto' as const,
   }
 
   return (
@@ -387,7 +395,7 @@ export function Checklist({ id, title, items, position, color, width = 320, heig
         style={style}
         data-node-id={id}
         data-item-id={id}
-        onMouseDown={() => bringToFront(id)}
+        onMouseDown={() => { if (!isDragging) bringToFront(id) }}
       >
         <Resizable
           size={{ width: width * vScale, height: height * vScale }}

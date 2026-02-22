@@ -1,3 +1,4 @@
+'use client'
 import { useState } from 'react'
 import { STICKY_COLORS } from '../store/stickyNoteStore'
 import { useBoardStore } from '../store/boardStore'

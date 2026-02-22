@@ -1,3 +1,4 @@
+'use client'
 import { useState, useEffect } from 'react'
 import { X, Download, Image as ImageIcon, Loader2 } from 'lucide-react'
 import { useExportStore } from '../store/exportStore'

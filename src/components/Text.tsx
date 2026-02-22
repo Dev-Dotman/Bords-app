@@ -1,4 +1,5 @@
-import { useState, useRef, useEffect } from 'react'
+'use client'
+import { useState, useRef, useEffect, useMemo } from 'react'
 import { useDraggable } from '@dnd-kit/core'
 import { CSS } from '@dnd-kit/utilities'
 import { Resizable } from 're-resizable'
@@ -32,10 +33,16 @@ export function Text({ id, text, position, fontSize, color, rotation = 0, width 
     updateText(id, { width: width + Math.round(d.width / vScale) })
   }
 
+  const positionRef = useRef(position)
+  positionRef.current = position
+  const stableData = useMemo(() => ({
+    type: 'text' as const, id, get position() { return positionRef.current }, rotation: rotation || 0, width,
+  }), [id, rotation, width])
+
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: `text-${id}`,
     disabled: !isDragEnabled,
-    data: { type: 'text', id, position, rotation: rotation || 0 }
+    data: stableData,
   })
 
   const adjustFontSize = (delta: number) => {
@@ -82,6 +89,7 @@ export function Text({ id, text, position, fontSize, color, rotation = 0, width 
     scrollMargin: 0,
     opacity: isDragging ? 0.5 : 1,
     zIndex: isDragging ? 10000 : zIndex,
+    willChange: isDragging ? 'transform' as const : 'auto' as const,
   }
 
   return (
@@ -90,7 +98,7 @@ export function Text({ id, text, position, fontSize, color, rotation = 0, width 
       data-node-id={id}
       data-text-id={id}
       data-item-id={id}
-      onMouseDown={() => bringToFront(id)}
+      onMouseDown={() => { if (!isDragging) bringToFront(id) }}
     >
       <Resizable
         size={{ width: width * vScale, height: 'auto' }}

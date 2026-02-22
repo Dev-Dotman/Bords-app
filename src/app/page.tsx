@@ -6,7 +6,7 @@ import { useSession } from "next-auth/react";
 import { motion } from "framer-motion";
 import { X, Layout, Plus } from "lucide-react";
 
-import { DndContext, DragEndEvent, DragStartEvent, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
+import { DndContext, DragEndEvent, DragStartEvent, PointerSensor, TouchSensor, useSensor, useSensors } from "@dnd-kit/core";
 import { GridBackground } from "@/components/GridBackground";
 import { Dock } from "@/components/Dock";
 import { TopBar } from "@/components/TopBar";
@@ -92,6 +92,12 @@ export default function Home() {
       activationConstraint: {
         distance: 8, // Require 8px movement before drag starts
       },
+    }),
+    useSensor(TouchSensor, {
+      activationConstraint: {
+        delay: 200,      // Hold 200ms before drag activates
+        tolerance: 6,    // Allow 6px finger wobble during hold
+      },
     })
   );
 
@@ -118,16 +124,16 @@ export default function Home() {
     const padding = 16;
     
     if (data?.type === 'note') {
-      const scaledWidth = 192 * vScale;
+      const noteWidth = (data.width || 192) * vScale;
       const newPosition = {
-        x: snap(Math.max(padding, Math.min(contentW - (scaledWidth + padding), data.position.x + dx))),
+        x: snap(Math.max(padding, Math.min(contentW - (noteWidth + padding), data.position.x + dx))),
         y: snap(data.position.y + dy)
       };
       updateNote(data.id, { position: newPosition });
     } else if (data?.type === 'checklist') {
-      const scaledWidth = 320 * vScale;
+      const checklistWidth = (data.width || 320) * vScale;
       const newPosition = {
-        x: snap(Math.max(padding, Math.min(contentW - (scaledWidth + padding), data.position.x + dx))),
+        x: snap(Math.max(padding, Math.min(contentW - (checklistWidth + padding), data.position.x + dx))),
         y: snap(data.position.y + dy)
       };
       updateChecklist(data.id, { position: newPosition });

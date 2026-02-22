@@ -1,3 +1,4 @@
+'use client'
 import { useState } from 'react'
 import { XCircle, Plus, Calendar, Trash2 } from 'lucide-react'
 import { useChecklistStore, CHECKLIST_COLORS } from '../store/checklistStore'

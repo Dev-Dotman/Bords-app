@@ -1,3 +1,4 @@
+'use client'
 import { useConnectionStore } from '../store/connectionStore'
 import { motion, useMotionValue } from 'framer-motion'
 import { useState, useEffect } from 'react'

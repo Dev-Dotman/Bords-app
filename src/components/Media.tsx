@@ -1,4 +1,5 @@
-import { useState, useRef } from "react";
+'use client'
+import { useState, useRef, useMemo } from "react";
 import { useDraggable } from '@dnd-kit/core'
 import { CSS } from '@dnd-kit/utilities'
 import { Resizable } from 're-resizable'
@@ -118,10 +119,16 @@ export function Media({
 
   const thumbnailUrl = type === "video" ? getYouTubeThumbnail(url) : null;
 
+  const positionRef = useRef(position)
+  positionRef.current = position
+  const stableData = useMemo(() => ({
+    type: 'media' as const, id, get position() { return positionRef.current },
+  }), [id])
+
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: `media-${id}`,
     disabled: !isDragEnabled,
-    data: { type: 'media', id, position }
+    data: stableData,
   })
 
   const zoom = useGridStore((s) => s.zoom)
@@ -137,6 +144,7 @@ export function Media({
     touchAction: "none" as const,
     opacity: isDragging ? 0.5 : 1,
     zIndex: isDragging ? 10000 : zIndex,
+    willChange: isDragging ? 'transform' as const : 'auto' as const,
   }
 
   return (
@@ -154,7 +162,7 @@ export function Media({
         tabIndex={0}
         onFocus={(e) => e.preventDefault()}
         onDoubleClick={handleDoubleClick}
-        onMouseDown={() => bringToFront(id)}
+        onMouseDown={() => { if (!isDragging) bringToFront(id) }}
         onClick={() => { setShowNodes(true); setIsHovered(true); }}
         onBlur={() => { setShowNodes(false); setIsHovered(false); }}
         onMouseEnter={() => {

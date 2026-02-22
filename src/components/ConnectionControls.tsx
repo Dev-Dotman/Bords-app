@@ -1,3 +1,4 @@
+'use client'
 import { useState } from 'react'
 import { Link2, Trash2, Eye, ChevronUp, ChevronDown } from 'lucide-react'
 import { ConnectionsModal } from './ConnectionsModal'

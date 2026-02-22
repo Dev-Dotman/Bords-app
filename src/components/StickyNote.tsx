@@ -1,5 +1,6 @@
-import { Trash2, Edit2, Palette, ChevronDown } from 'lucide-react'
-import { useState, useRef, useEffect } from 'react'
+'use client'
+import { Trash2, Edit2, Palette, ChevronDown, GripVertical } from 'lucide-react'
+import { useState, useRef, useEffect, useMemo } from 'react'
 import { useDraggable } from '@dnd-kit/core'
 import { CSS } from '@dnd-kit/utilities'
 import { Resizable } from 're-resizable'
@@ -69,10 +70,17 @@ export function StickyNote({ id, text, position, color, width = 192, height }: S
     // Recheck when text or height changes
   }, [text, noteHeight])
 
+  // Stabilise drag-start position so mid-drag re-renders never shift the origin
+  const positionRef = useRef(position)
+  positionRef.current = position
+  const stableData = useMemo(() => ({
+    type: 'note' as const, id, get position() { return positionRef.current }, width,
+  }), [id, width])
+
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: `note-${id}`,
     disabled: !isDragEnabled,
-    data: { type: 'note', id, position }
+    data: stableData,
   })
 
   const handleResizeStop = (e: any, direction: any, ref: any, d: any) => {
@@ -124,10 +132,10 @@ export function StickyNote({ id, text, position, color, width = 192, height }: S
     left: position.x,
     top: position.y,
     boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03)',
-    touchAction: 'none' as const,
     scrollMargin: 0,
     opacity: isDragging ? 0.5 : 1,
     zIndex: isDragging ? 10000 : zIndex,
+    willChange: isDragging ? 'transform' as const : 'auto' as const,
   }
 
   return (
@@ -136,7 +144,7 @@ export function StickyNote({ id, text, position, color, width = 192, height }: S
         style={style}
         data-node-id={id}
         data-item-id={id}
-        onMouseDown={() => bringToFront(id)}
+        onMouseDown={() => { if (!isDragging) bringToFront(id) }}
       >
         <Resizable
           size={{ width: width * vScale, height: noteHeight * vScale }}
@@ -182,12 +190,14 @@ export function StickyNote({ id, text, position, color, width = 192, height }: S
             onBlur={() => setShowNodes(false)}
             className={`
               w-full h-full p-5 rounded-2xl sticky-note
-              ${color} cursor-pointer select-none relative
+              ${color} select-none relative
               backdrop-blur-sm border item-container
               ${isSelected ? 'border-blue-400/50 ring-2 ring-blue-400/30' : 'border-black/10'}
               ${isConnected ? 'ring-1 ring-blue-400/50' : ''}
+              ${isDragEnabled ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'}
               will-change-transform
             `}
+            style={{ touchAction: 'none' }}
             tabIndex={0}
             onFocus={(e) => e.preventDefault()}
             onMouseEnter={() => setShowControls(true)}
@@ -214,9 +224,25 @@ export function StickyNote({ id, text, position, color, width = 192, height }: S
           Sticky Note
         </div>
 
+        {/* Drag Handle — touch-safe fallback when text area is scrollable */}
+        <div
+          {...listeners}
+          {...attributes}
+          className={`absolute top-1.5 right-1.5 p-1 rounded-md z-10 transition-colors ${
+            isDragEnabled
+              ? 'cursor-grab active:cursor-grabbing text-gray-500 hover:text-gray-700 hover:bg-black/5'
+              : 'text-gray-300 pointer-events-none'
+          }`}
+          style={{ touchAction: 'none' }}
+          title={isDragEnabled ? 'Drag to move' : ''}
+        >
+          <GripVertical size={14} />
+        </div>
+
         <div 
           ref={textContainerRef}
           className="note-content whitespace-pre-wrap break-words text-gray-800 select-none font-medium overflow-auto max-h-full pr-2"
+          style={{ touchAction: 'pan-y' }}
         >
           {text}
         </div>

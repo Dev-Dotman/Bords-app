@@ -1,3 +1,4 @@
+'use client'
 import { useState } from 'react'
 import { X, Link, Upload, Image as ImageIcon, Video } from 'lucide-react'
 import { useMediaStore, MediaType } from '../store/mediaStore'

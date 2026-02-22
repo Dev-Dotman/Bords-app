@@ -1,3 +1,4 @@
+'use client'
 import { useState } from 'react'
 import { Pencil, Eraser, ZoomIn, ZoomOut } from 'lucide-react'
 import { useThemeStore } from '../store/themeStore'

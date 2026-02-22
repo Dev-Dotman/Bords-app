@@ -1,3 +1,4 @@
+'use client'
 import { motion } from 'framer-motion'
 import { Link2, Trash2, X } from 'lucide-react'
 import { useConnectionStore } from '../store/connectionStore'

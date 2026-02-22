@@ -1,4 +1,5 @@
-import { useState, useRef, useEffect, useCallback } from 'react'
+'use client'
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { useDraggable } from '@dnd-kit/core'
 import { CSS } from '@dnd-kit/utilities'
 import { Resizable } from 're-resizable'
@@ -121,11 +122,17 @@ export function KanbanBoard({ board }: KanbanBoardProps) {
   const zIndex = useZIndexStore((s) => s.zIndexMap[board.id] || 1)
 
   // ── dnd-kit board draggable ──────────────────────────────────
+  const positionRef = useRef(board.position)
+  positionRef.current = board.position
+  const stableData = useMemo(() => ({
+    type: 'kanban' as const, id: board.id, get position() { return positionRef.current },
+  }), [board.id])
+
   const { attributes, listeners, setNodeRef, transform, isDragging } =
     useDraggable({
       id: `kanban-${board.id}`,
       disabled: !isDragEnabled,
-      data: { type: 'kanban', id: board.id, position: board.position },
+      data: stableData,
     })
 
   // ── handlers ─────────────────────────────────────────────────
@@ -424,6 +431,7 @@ export function KanbanBoard({ board }: KanbanBoardProps) {
     top: board.position.y,
     opacity: isDragging ? 0.5 : 1,
     zIndex: isDragging ? 10000 : zIndex,
+    willChange: isDragging ? 'transform' as const : 'auto' as const,
   }
 
   // ────────────────────────────────────────────────────────────
@@ -433,7 +441,7 @@ export function KanbanBoard({ board }: KanbanBoardProps) {
         style={style}
         data-node-id={board.id}
         data-item-id={board.id}
-        onMouseDown={() => bringToFront(board.id)}
+        onMouseDown={() => { if (!isDragging) bringToFront(board.id) }}
       >
         <Resizable
           size={{ width: width * vScale, height: height * vScale }}

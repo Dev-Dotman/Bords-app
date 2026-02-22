@@ -1,4 +1,5 @@
-import { useState, useRef, useEffect, useCallback } from 'react'
+'use client'
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { useDraggable } from '@dnd-kit/core'
 import { CSS } from '@dnd-kit/utilities'
 import { Resizable } from 're-resizable'
@@ -66,10 +67,16 @@ export function Reminder({
     return otherRect.left < thisRect.left ? 'left' : 'right'
   }
 
+  const positionRef = useRef(position)
+  positionRef.current = position
+  const stableData = useMemo(() => ({
+    type: 'reminder' as const, id, get position() { return positionRef.current },
+  }), [id])
+
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: `reminder-${id}`,
     disabled: !isDragEnabled,
-    data: { type: 'reminder', id, position },
+    data: stableData,
   })
 
   const handleResizeStop = (_e: any, _dir: any, _ref: any, d: any) => {
@@ -196,11 +203,12 @@ export function Reminder({
     touchAction: 'none' as const,
     opacity: isDragging ? 0.5 : 1,
     zIndex: isDragging ? 10000 : zIndex,
+    willChange: isDragging ? 'transform' as const : 'auto' as const,
   }
 
   return (
     <>
-      <div style={style} data-node-id={id} data-item-id={id} onMouseDown={() => bringToFront(id)}>
+      <div style={style} data-node-id={id} data-item-id={id} onMouseDown={() => { if (!isDragging) bringToFront(id) }}>
         <Resizable
           size={{ width: width * vScale, height: height * vScale }}
           onResizeStop={handleResizeStop}

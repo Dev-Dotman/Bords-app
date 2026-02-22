@@ -1,3 +1,4 @@
+'use client'
 import { useState, useEffect } from 'react'
 import { X, Plus, Trash2, Calendar, Clock, Bell, UserPlus } from 'lucide-react'
 import { useReminderStore, REMINDER_COLORS } from '../store/reminderStore'

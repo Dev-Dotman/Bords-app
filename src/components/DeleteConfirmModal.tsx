@@ -1,3 +1,4 @@
+'use client'
 import { createPortal } from 'react-dom'
 import { Trash2, X } from 'lucide-react'
 import { useThemeStore } from '../store/themeStore'

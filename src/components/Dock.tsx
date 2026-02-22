@@ -1,3 +1,4 @@
+'use client'
 import { useState, useEffect } from 'react'
 import { useThemeStore } from '../store/themeStore'
 import { useGridStore } from '../store/gridStore'

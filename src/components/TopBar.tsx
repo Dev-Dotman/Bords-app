@@ -1,3 +1,4 @@
+'use client'
 import { useState, useEffect, useRef } from 'react'
 import { Moon, Sun, Share2, User, ChevronRight, Layout, LogOut, Minimize2, Maximize2, Building2, Cloud, CloudOff, Loader2, Trash2, Inbox, Users, UserPlus } from 'lucide-react'
 import { useSession, signOut } from 'next-auth/react'

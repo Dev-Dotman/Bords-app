@@ -1,3 +1,4 @@
+'use client'
 import { motion } from 'framer-motion'
 import { useBoardStore } from '../store/boardStore'
 import { useThemeStore } from '../store/themeStore'

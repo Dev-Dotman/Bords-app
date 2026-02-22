@@ -1,3 +1,4 @@
+'use client'
 import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Link2, Trash2, Eye, X, ChevronUp, ChevronDown } from 'lucide-react'

@@ -1,3 +1,4 @@
+'use client'
 import { motion } from 'framer-motion'
 import { useOrganizePanelStore } from '../store/organizePanelStore'
 import { useNoteStore } from '../store/stickyNoteStore'
