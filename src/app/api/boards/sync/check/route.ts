@@ -4,6 +4,7 @@ import { authOptions } from '@/app/api/auth/[...nextauth]/route'
 import connectDB from '@/lib/mongodb'
 import BoardDocument from '@/models/BoardDocument'
 import Bord from '@/models/Bord'
+import User from '@/models/User'
 
 /* ─── GET — Ultra-lightweight: return only boardId + contentHash ─── */
 /* This endpoint exists solely for change detection.                   */
@@ -27,18 +28,36 @@ export async function GET(req: NextRequest) {
         .lean(),
     ])
 
-    // Resolve permission for shared boards
+    // Resolve permission + owner info for shared personal boards
     const sharedPermissions: Record<string, string> = {}
+    const sharedByMap: Record<string, { name: string; email: string }> = {}
     if (shared.length > 0) {
-      // Re-query with sharedWith to extract per-user permission
+      // Re-query with sharedWith + owner to extract per-user permission and owner identity
       const sharedFull = await BoardDocument.find({ 'sharedWith.userId': session.user.id })
-        .select('localBoardId sharedWith')
+        .select('localBoardId sharedWith owner')
         .lean()
+
+      // Collect unique owner IDs to batch-lookup names
+      const ownerIds = [...new Set(sharedFull.map((d: any) => d.owner?.toString()).filter(Boolean))]
+      const owners = ownerIds.length > 0
+        ? await User.find({ _id: { $in: ownerIds } }).select('firstName lastName email').lean()
+        : []
+      const ownerMap = new Map(owners.map((u: any) => [u._id.toString(), u]))
+
       for (const doc of sharedFull) {
         const entry = (doc as any).sharedWith?.find(
           (s: any) => s.userId?.toString() === session.user.id
         )
         sharedPermissions[(doc as any).localBoardId] = entry?.permission || 'view'
+
+        // Attach owner name/email
+        const owner = ownerMap.get((doc as any).owner?.toString())
+        if (owner) {
+          sharedByMap[(doc as any).localBoardId] = {
+            name: `${(owner as any).firstName || ''} ${(owner as any).lastName || ''}`.trim() || (owner as any).email,
+            email: (owner as any).email,
+          }
+        }
       }
     }
 
@@ -100,6 +119,7 @@ export async function GET(req: NextRequest) {
         name:         b.name,
         shared:       true,
         permission:   sharedPermissions[b.localBoardId] || 'view',
+        sharedBy:     sharedByMap[b.localBoardId] || null,
       })),
       ...accessListBoards,
     ]

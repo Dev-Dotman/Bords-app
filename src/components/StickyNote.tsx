@@ -15,6 +15,7 @@ import { DeleteConfirmModal } from './DeleteConfirmModal'
 import { ColorPicker } from './ColorPicker'
 import { AssignButton } from './delegation/AssignButton'
 import { useViewportScale } from '../hooks/useViewportScale'
+import { useIsViewOnly } from '@/lib/useIsViewOnly'
 
 interface StickyNoteProps extends StickyNoteType {}
 
@@ -39,6 +40,7 @@ export function StickyNote({ id, text, position, color, width = 192, height }: S
   const { bringToFront, getZIndex } = useZIndexStore()
   const zIndex = useZIndexStore((state) => state.zIndexMap[id] || 1)
   const vScale = useViewportScale()
+  const isViewOnly = useIsViewOnly()
 
   // Calculate minimum height based on text content
   const calculateMinHeight = () => {
@@ -84,6 +86,7 @@ export function StickyNote({ id, text, position, color, width = 192, height }: S
   })
 
   const handleResizeStop = (e: any, direction: any, ref: any, d: any) => {
+    if (isViewOnly) return
     updateNote(id, {
       width: width + Math.round(d.width / vScale),
       height: noteHeight + Math.round(d.height / vScale)
@@ -100,6 +103,7 @@ export function StickyNote({ id, text, position, color, width = 192, height }: S
 
   const handleEdit = (e: React.MouseEvent) => {
     e.stopPropagation()
+    if (isViewOnly) return
     setShowEditModal(true)
   }
 
@@ -153,11 +157,11 @@ export function StickyNote({ id, text, position, color, width = 192, height }: S
           minHeight={minHeight * vScale}
           enable={{
             top: false,
-            right: !isDragging,
-            bottom: !isDragging,
+            right: !isDragging && !isViewOnly,
+            bottom: !isDragging && !isViewOnly,
             left: false,
             topRight: false,
-            bottomRight: !isDragging,
+            bottomRight: !isDragging && !isViewOnly,
             bottomLeft: false,
             topLeft: false,
           }}
@@ -255,7 +259,7 @@ export function StickyNote({ id, text, position, color, width = 192, height }: S
           </div>
         )}
 
-        {showControls && (
+        {showControls && !isViewOnly && (
           <div 
             className="absolute -top-2 -right-2 bg-white/80 backdrop-blur-md rounded-full shadow-lg border border-black/10 flex overflow-hidden"
           >

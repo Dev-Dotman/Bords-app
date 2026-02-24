@@ -28,6 +28,19 @@ export function MediaModal() {
   const [fileError, setFileError] = useState<string>('')
   const [isProcessing, setIsProcessing] = useState(false)
 
+  // Auto-detect video URLs when user types/pastes
+  const isVideoUrl = (u: string): boolean => {
+    const trimmed = u.trim().toLowerCase()
+    return /youtu\.?be|youtube\.com|vimeo\.com|dailymotion\.com|twitch\.tv|tiktok\.com/.test(trimmed)
+      || /\.(mp4|webm|mov|avi|mkv)(\?.*)?$/.test(trimmed)
+  }
+
+  const handleUrlChange = (value: string) => {
+    setUrl(value)
+    if (isVideoUrl(value)) setMediaType('video')
+    else if (mediaType === 'video' && !isVideoUrl(value)) setMediaType('image')
+  }
+
   if (!isMediaModalOpen) return null
 
   const handleClose = () => {
@@ -322,7 +335,7 @@ export function MediaModal() {
                 <input
                   type="url"
                   value={url}
-                  onChange={(e) => setUrl(e.target.value)}
+                  onChange={(e) => handleUrlChange(e.target.value)}
                   placeholder={mediaType === 'image' ? 'https://example.com/image.jpg' : 'https://youtube.com/watch?v=...'}
                   required
                   className={`w-full px-4 py-2 rounded-lg border transition-colors

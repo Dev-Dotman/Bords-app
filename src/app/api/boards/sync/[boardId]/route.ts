@@ -19,14 +19,14 @@ export async function GET(
     const { boardId } = await params
     await connectDB()
 
-    // Find by owner + localBoardId or shared
+    // Find by owner + localBoardId or shared (exclude comments — managed via comments API)
     let doc = await BoardDocument.findOne({
       localBoardId: boardId,
       $or: [
         { owner: session.user.id },
         { 'sharedWith.userId': session.user.id },
       ],
-    }).lean()
+    }).select('-comments').lean()
 
     // Fallback: check if user has access via Bord accessList
     if (!doc) {
@@ -39,7 +39,7 @@ export async function GET(
         doc = await BoardDocument.findOne({
           localBoardId: boardId,
           owner: bord.ownerId,
-        }).lean()
+        }).select('-comments').lean()
 
         if (doc) {
           // Resolve permission from the accessList entry

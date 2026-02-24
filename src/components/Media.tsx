@@ -1,5 +1,5 @@
 'use client'
-import { useState, useRef, useMemo } from "react";
+import { useState, useRef, useMemo, useEffect } from "react";
 import { useDraggable } from '@dnd-kit/core'
 import { CSS } from '@dnd-kit/utilities'
 import { Resizable } from 're-resizable'
@@ -20,6 +20,7 @@ import { useGridStore } from '../store/gridStore'
 import { DeleteConfirmModal } from './DeleteConfirmModal'
 import { ColorPicker } from './ColorPicker'
 import { useViewportScale } from '../hooks/useViewportScale'
+import { useIsViewOnly } from '@/lib/useIsViewOnly'
 
 export function Media({
   id,
@@ -35,10 +36,17 @@ export function Media({
   const [isHovered, setIsHovered] = useState(false);
   const [showNodes, setShowNodes] = useState(false);
   const [showColorPicker, setShowColorPicker] = useState(false);
+  const [videoActivated, setVideoActivated] = useState(false);
   const colorBtnRef = useRef<HTMLButtonElement>(null);
   const isDark = useThemeStore((state) => state.isDark);
   const { updateMedia, deleteMedia } = useMediaStore();
   const isDragEnabled = useDragModeStore((state) => state.isDragEnabled);
+
+  // Deactivate video iframe when drag mode turns on
+  useEffect(() => {
+    if (isDragEnabled) setVideoActivated(false);
+  }, [isDragEnabled]);
+
   const { selectedItems, selectItem, deselectItem, removeConnectionsByItemId } = useConnectionStore();
   const connections = useConnectionStore((state) => state.connections);
   const isVisible = useConnectionStore((state) => state.isVisible);
@@ -48,6 +56,7 @@ export function Media({
   const { bringToFront } = useZIndexStore()
   const zIndex = useZIndexStore((state) => state.zIndexMap[id] || 1)
   const vScale = useViewportScale()
+  const isViewOnly = useIsViewOnly()
 
   const handleDelete = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -147,11 +156,14 @@ export function Media({
     willChange: isDragging ? 'transform' as const : 'auto' as const,
   }
 
+  // When video is playing, don't attach drag listeners so the iframe is interactive
+  const shouldAttachListeners = !(type === 'video' && videoActivated)
+
   return (
     <>
       <div
         ref={setNodeRef}
-        {...listeners}
+        {...(shouldAttachListeners ? listeners : {})}
         {...attributes}
         style={style}
         className={`item-container ${
@@ -194,11 +206,12 @@ export function Media({
           minWidth={150 * vScale}
           minHeight={100 * vScale}
           enable={{
-            right: true,
-            bottom: true,
-            bottomRight: true,
+            right: !isViewOnly,
+            bottom: !isViewOnly,
+            bottomRight: !isViewOnly,
           }}
           onResizeStop={(e, direction, ref, d) => {
+            if (isViewOnly) return
             const newWidth = type === "video" ? Math.round((width * 1.4 + d.width / vScale) / 1.4) : width + Math.round(d.width / vScale)
             const newHeight = type === "image" ? height + Math.round(d.height / vScale) : height
             updateMedia(id, { width: newWidth, height: newHeight })
@@ -266,19 +279,66 @@ export function Media({
               )
             ) : (
               <>
-                <iframe
-                  src={getYouTubeEmbedUrl(url)}
-                  title={title || "Video"}
-                  className="w-full h-full"
-                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                  allowFullScreen
-                />
-                {/* Hidden thumbnail for export - positioned behind iframe */}
+                {videoActivated ? (
+                  /* Live iframe — shown after user clicks play */
+                  <div className="relative w-full h-full">
+                    <iframe
+                      src={`${getYouTubeEmbedUrl(url)}${getYouTubeEmbedUrl(url).includes('?') ? '&' : '?'}autoplay=1`}
+                      title={title || "Video"}
+                      className="w-full h-full"
+                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                      allowFullScreen
+                    />
+                    {/* Stop button — returns to thumbnail */}
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setVideoActivated(false); }}
+                      onPointerDown={(e) => e.stopPropagation()}
+                      className="absolute top-2 left-2 z-20 p-1.5 rounded-lg bg-black/60 hover:bg-black/80 text-white transition-colors"
+                      title="Stop video"
+                    >
+                      <svg viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4">
+                        <rect x="6" y="6" width="12" height="12" rx="1" />
+                      </svg>
+                    </button>
+                  </div>
+                ) : (
+                  /* Thumbnail + play button — always visible */
+                  <div className="relative w-full h-full group/play">
+                    {thumbnailUrl ? (
+                      <img
+                        src={thumbnailUrl}
+                        alt={title || "Video thumbnail"}
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <div className={`w-full h-full flex items-center justify-center ${isDark ? 'bg-zinc-800' : 'bg-zinc-200'}`}>
+                        <Video size={32} className={isDark ? 'text-zinc-600' : 'text-zinc-400'} />
+                      </div>
+                    )}
+                    {/* Play button overlay — always shown so user knows it's a video */}
+                    <div className="absolute inset-0 flex items-center justify-center bg-black/30 group-hover/play:bg-black/40 transition-colors">
+                      <button
+                        type="button"
+                        onPointerDown={(e) => e.stopPropagation()}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setVideoActivated(true);
+                        }}
+                        className="w-12 h-12 rounded-full bg-white/95 hover:bg-white flex items-center justify-center shadow-[0_2px_12px_rgba(0,0,0,0.3)] hover:shadow-[0_4px_20px_rgba(0,0,0,0.4)] hover:scale-110 active:scale-95 transition-all cursor-pointer backdrop-blur-sm"
+                      >
+                        <svg viewBox="0 0 24 24" fill="#111" className="w-7 h-7 ml-0.5">
+                          <path d="M8 5v14l11-7z" />
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+                )}
+                {/* Hidden thumbnail for export - behind everything, only for canvas capture */}
                 {thumbnailUrl && (
                   <img
                     src={thumbnailUrl}
                     alt={title || "Video thumbnail"}
-                    className="absolute inset-0 w-full h-full object-cover z-0"
+                    className="absolute inset-0 w-full h-full object-cover -z-10 pointer-events-none"
                     crossOrigin="anonymous"
                     data-export-thumbnail="true"
                   />
@@ -317,8 +377,9 @@ export function Media({
           )}
 
           {/* Action Buttons */}
+          {!isViewOnly && (
           <div
-            className={`absolute top-2 right-2 flex gap-2 transition-opacity duration-200
+            className={`absolute top-2 right-2 flex gap-2 transition-opacity duration-200 z-20
             ${isHovered ? "opacity-100" : "opacity-0"}`}
           >
             <button
@@ -340,6 +401,7 @@ export function Media({
               <Trash2 size={16} />
             </button>
           </div>
+          )}
           {/* Connection Nodes */}
           <ConnectionNode
             id={id}

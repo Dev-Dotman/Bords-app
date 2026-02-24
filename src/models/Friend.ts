@@ -2,8 +2,8 @@ import mongoose, { Schema, Model, Types } from 'mongoose'
 
 /**
  * Friends are personal-workspace contacts who can receive
- * reminders / personal task assignments.
- * They do NOT have canvas access — inbox only.
+ * reminders / personal task assignments and collaborate on
+ * personal boards (view/edit access via BoardDocument.sharedWith).
  */
 export interface IFriend {
   _id: string

@@ -40,6 +40,7 @@ import { useDragModeStore } from "@/store/dragModeStore";
 import { usePresentationStore } from "@/store/presentationStore";
 import { useFullScreenStore } from "@/store/fullScreenStore";
 import { AssignTaskModal } from "@/components/delegation/AssignTaskModal";
+import { MergeConflictModal } from "@/components/MergeConflictModal";
 import { useDelegationStore } from "@/store/delegationStore";
 import { useOrganizationStore } from "@/store/organizationStore";
 import { useBoardSyncStore, gatherBoardDataForBeacon } from "@/store/boardSyncStore";
@@ -953,6 +954,7 @@ export default function Home() {
                 <BackgroundModal />
                 <ConnectionLineModal />
                 <AssignTaskModal />
+                <MergeConflictModal />
               </>
             )}
           </div>

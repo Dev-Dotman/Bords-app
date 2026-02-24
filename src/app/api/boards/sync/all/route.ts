@@ -14,13 +14,15 @@ export async function GET(req: NextRequest) {
 
     await connectDB()
 
-    // Fetch all boards owned by user (full documents)
+    // Fetch all boards owned by user (exclude comments — managed via comments API)
     const owned = await BoardDocument.find({ owner: session.user.id })
+      .select('-comments')
       .sort({ updatedAt: -1 })
       .lean()
 
-    // Fetch boards shared with the user (full documents)
+    // Fetch boards shared with the user (exclude comments)
     const shared = await BoardDocument.find({ 'sharedWith.userId': session.user.id })
+      .select('-comments')
       .sort({ updatedAt: -1 })
       .lean()
 

@@ -1,5 +1,5 @@
 'use client'
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useMemo } from 'react'
 import {
   Tags, Handshake, Command, Brain, Workflow,
   Image, Download, Palette, Presentation, GitBranch
@@ -15,10 +15,12 @@ import { useOrganizationStore } from '../store/organizationStore'
 import { useDelegationStore } from '../store/delegationStore'
 import { useWorkspaceStore } from '../store/workspaceStore'
 import { BordAccessModal } from './workspace/BordAccessModal'
+import { PersonalBordAccessModal } from './workspace/PersonalBordAccessModal'
 
 export function SideBar() {
   const [hoveredItem, setHoveredItem] = useState<number | null>(null);
   const [showAccessModal, setShowAccessModal] = useState(false)
+  const [showPersonalAccessModal, setShowPersonalAccessModal] = useState(false)
   const [isLinkingBord, setIsLinkingBord] = useState(false)
   const [showGridColorPicker, setShowGridColorPicker] = useState(false)
   const gridPickerRef = useRef<HTMLDivElement>(null)
@@ -42,8 +44,17 @@ export function SideBar() {
     ? bords.find(b => b.localBoardId === currentBoardId)
     : null
 
-  // Show Collaborate only for org owners; hide entirely for regular members
-  const showCollaborate = isOrgContext && isOwnerOfCurrentOrg
+  const friends = useWorkspaceStore(s => s.friends)
+  const fetchFriends = useWorkspaceStore(s => s.fetchFriends)
+  const acceptedFriends = useMemo(() => friends.filter(f => f.status === 'accepted'), [friends])
+
+  // Show Collaborate for org owners OR always in personal context
+  const showCollaborate = (isOrgContext && isOwnerOfCurrentOrg) || !isOrgContext
+
+  // Eagerly fetch friends when in personal context so the list is populated
+  useEffect(() => {
+    if (!isOrgContext) fetchFriends()
+  }, [isOrgContext, fetchFriends])
 
   // Close grid color picker on click outside
   useEffect(() => {
@@ -63,7 +74,7 @@ export function SideBar() {
     { id: 4, icon: Presentation, label: "Presentation Mode", description: !currentBoardId ? "Select/create a board to get started" : "Full-screen view", disabled: !currentBoardId },
     { id: 5, icon: GitBranch, label: "Connection Lines", description: isViewOnly ? "View-only mode" : !currentBoardId ? "Select/create a board to get started" : "Customize line colors", disabled: !currentBoardId || isViewOnly },
     // { id: 6, icon: Tags, label: "Tags", description: "Organize & filter", comingSoon: true },
-    ...(showCollaborate ? [{ id: 7, icon: Handshake, label: "Collaborate", description: !currentBoardId ? "Select/create a board to get started" : isLinkingBord ? "Setting up..." : "Manage team access", disabled: !currentBoardId || isLinkingBord }] : []),
+    ...(showCollaborate ? [{ id: 7, icon: Handshake, label: "Collaborate", description: !currentBoardId ? "Select/create a board to get started" : isLinkingBord ? "Setting up..." : isOrgContext ? "Manage team access" : "Share with friends", disabled: !currentBoardId || isLinkingBord }] : []),
     // { id: 8, icon: Command, label: "Commands", description: "Quick actions", comingSoon: true },
     // { id: 9, icon: Brain, label: "AI Helper", description: "Smart suggestions", comingSoon: true },
     { id: 10, icon: Workflow, label: "Automations", description: "Custom triggers", comingSoon: true }
@@ -99,7 +110,14 @@ export function SideBar() {
       togglePresentationMode()
     } else if (itemId === 5) { // Connection Lines
       openConnectionLineModal()
-    } else if (itemId === 7) { // Collaborate — open Bord Access Modal
+    } else if (itemId === 7) { // Collaborate
+      if (!isOrgContext) {
+        // Personal context — share with friends
+        if (!currentBoardId) return
+        setShowPersonalAccessModal(true)
+        return
+      }
+      // Org context — open Bord Access Modal
       if (currentBord) {
         setShowAccessModal(true)
         return
@@ -242,7 +260,7 @@ export function SideBar() {
         </div>
       )}
 
-      {/* Bord Access Modal — triggered by Collaborate button */}
+      {/* Bord Access Modal — triggered by Collaborate button (org context) */}
       {showAccessModal && (() => {
         const bordId = currentBord?._id
         if (!bordId) return null
@@ -255,6 +273,16 @@ export function SideBar() {
           />
         )
       })()}
+
+      {/* Personal Access Modal — triggered by Collaborate button (personal context) */}
+      {showPersonalAccessModal && currentBoardId && (
+        <PersonalBordAccessModal
+          localBoardId={currentBoardId}
+          boardTitle={currentBoard?.name || 'Board'}
+          isOpen={showPersonalAccessModal}
+          onClose={() => setShowPersonalAccessModal(false)}
+        />
+      )}
     </>
   )
 }

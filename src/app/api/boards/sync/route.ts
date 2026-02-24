@@ -10,6 +10,7 @@ import crypto from 'crypto'
 /* ── Fast content hash for change detection ── */
 function computeContentHash(board: any): string {
   // Hash only the content fields that matter for change detection
+  // Comments are managed server-side via the comments API — excluded from content hash
   const payload = JSON.stringify({
     checklists:   board.checklists   || [],
     kanbanBoards: board.kanbanBoards || [],
@@ -17,7 +18,6 @@ function computeContentHash(board: any): string {
     mediaItems:   board.mediaItems   || [],
     textElements: board.textElements || [],
     drawings:     board.drawings     || [],
-    comments:     board.comments     || [],
     connections:  board.connections  || [],
     reminders:    board.reminders    || [],
     itemIds:      board.itemIds      || {},
@@ -68,7 +68,7 @@ export async function POST(req: NextRequest) {
     await connectDB()
 
     const body = await req.json()
-    const { localBoardId, name, board, workspaceId, organizationId, contextType } = body
+    const { localBoardId, name, board, workspaceId, organizationId, contextType, baseHash } = body
 
     if (!localBoardId || !name || !board) {
       return NextResponse.json({ error: 'Missing localBoardId, name, or board data' }, { status: 400 })
@@ -103,7 +103,7 @@ export async function POST(req: NextRequest) {
       mediaItems:   board.mediaItems   || [],
       textElements: board.textElements || [],
       drawings:     board.drawings     || [],
-      comments:     board.comments     || [],
+      // comments excluded — managed server-side via comments API
       connections:  board.connections  || [],
       reminders:    board.reminders    || [],
       // Settings
@@ -119,6 +119,25 @@ export async function POST(req: NextRequest) {
 
     // Check if a doc already exists for this board (by any owner)
     let doc = await BoardDocument.findOne({ localBoardId })
+
+    // ── Optimistic locking (Git-style): reject if cloud moved ahead ──
+    // If the client provides a baseHash and it doesn't match the current
+    // cloud hash, a concurrent edit happened. Return 409 so the client
+    // can perform a three-way merge before retrying.
+    if (doc && baseHash && doc.contentHash && doc.contentHash !== baseHash) {
+      // Strip comments from the 409 payload — they're managed via the comments API
+      const { comments: _comments, ...cloudObj } = doc.toObject()
+      return NextResponse.json(
+        {
+          error: 'Board has been modified by another editor since your last sync',
+          code: 'MERGE_REQUIRED',
+          cloudBoard: cloudObj,
+          cloudHash: doc.contentHash,
+          cloudVersion: doc.version || 1,
+        },
+        { status: 409 }
+      )
+    }
 
     if (!doc || doc.owner.toString() === session.user.id) {
       // Owner path — upsert (handles both new boards and existing ones)
@@ -137,36 +156,58 @@ export async function POST(req: NextRequest) {
             visibility: 'private',
             sharedWith: [],
           },
+          $inc: { version: 1 },
         },
         { upsert: true, new: true }
       )
     } else {
-      // Not the owner — check if user has edit access via Bord accessList
-      const bord = await Bord.findOne({
-        localBoardId,
-        'accessList.userId': session.user.id,
-      }).lean()
+      // Not the owner — check edit access via sharedWith OR Bord accessList
 
-      if (!bord) {
-        return NextResponse.json({ error: 'Not authorized to sync this board' }, { status: 403 })
-      }
-
-      const entry = (bord.accessList as any[]).find(
-        (a: any) => (a.userId?.toString() || a.toString()) === session.user.id
+      // 1) Check BoardDocument.sharedWith first (personal board sharing / friends)
+      const sharedEntry = doc.sharedWith?.find(
+        (s: any) => s.userId?.toString() === session.user.id
       )
-      if (entry?.permission !== 'edit') {
-        return NextResponse.json({ error: 'View-only access — cannot sync changes' }, { status: 403 })
-      }
+      if (sharedEntry) {
+        if (sharedEntry.permission !== 'edit') {
+          return NextResponse.json({ error: 'View-only access — cannot sync changes' }, { status: 403 })
+        }
+        // Editor via sharedWith — update the owner's BoardDocument
+        doc = await BoardDocument.findOneAndUpdate(
+          { _id: doc._id },
+          { $set: $setPayload, $inc: { version: 1 } },
+          { new: true }
+        )
+        if (!doc) {
+          return NextResponse.json({ error: 'Board document not found' }, { status: 404 })
+        }
+      } else {
+        // 2) Fallback: check Bord accessList (org-level sharing)
+        const bord = await Bord.findOne({
+          localBoardId,
+          'accessList.userId': session.user.id,
+        }).lean()
 
-      // Editor path — update the owner's BoardDocument (don't change workspace/org metadata)
-      doc = await BoardDocument.findOneAndUpdate(
-        { owner: bord.ownerId, localBoardId },
-        { $set: $setPayload },
-        { new: true }
-      )
+        if (!bord) {
+          return NextResponse.json({ error: 'Not authorized to sync this board' }, { status: 403 })
+        }
 
-      if (!doc) {
-        return NextResponse.json({ error: 'Board document not found' }, { status: 404 })
+        const entry = (bord.accessList as any[]).find(
+          (a: any) => (a.userId?.toString() || a.toString()) === session.user.id
+        )
+        if (entry?.permission !== 'edit') {
+          return NextResponse.json({ error: 'View-only access — cannot sync changes' }, { status: 403 })
+        }
+
+        // Editor path — update the owner's BoardDocument (don't change workspace/org metadata)
+        doc = await BoardDocument.findOneAndUpdate(
+          { owner: bord.ownerId, localBoardId },
+          { $set: $setPayload, $inc: { version: 1 } },
+          { new: true }
+        )
+
+        if (!doc) {
+          return NextResponse.json({ error: 'Board document not found' }, { status: 404 })
+        }
       }
     }
 
@@ -175,6 +216,7 @@ export async function POST(req: NextRequest) {
       boardDocId: doc!._id.toString(),
       contentHash: doc!.contentHash,
       lastSyncedAt: doc!.lastSyncedAt,
+      version: doc!.version || 1,
     })
   } catch (error: any) {
     console.error('Board sync save error:', error)

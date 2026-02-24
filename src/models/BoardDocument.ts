@@ -101,11 +101,14 @@ const DrawingSchema = new Schema({
 }, { _id: false })
 
 const CommentSchema = new Schema({
-  id:        { type: String, required: true },
-  text:      { type: String, default: '' },
-  createdAt: { type: Date, default: Date.now },
-  position:  { type: PositionSchema, required: true },
-  boardId:   { type: String, default: '' },
+  id:          { type: String, required: true },
+  text:        { type: String, default: '' },
+  createdAt:   { type: Date, default: Date.now },
+  position:    { type: PositionSchema, required: true },
+  boardId:     { type: String, default: '' },
+  authorId:    { type: String, default: '' },
+  authorName:  { type: String, default: '' },
+  authorEmail: { type: String, default: '' },
 }, { _id: false })
 
 const ConnectionSchema = new Schema({
@@ -239,6 +242,7 @@ export interface IBoardDocument {
 
   contentHash?: string
   lastSyncedAt?: Date
+  version: number
 }
 
 const BoardDocumentSchema = new Schema<IBoardDocument>(
@@ -294,6 +298,7 @@ const BoardDocumentSchema = new Schema<IBoardDocument>(
 
     contentHash:  { type: String, default: '' },
     lastSyncedAt: { type: Date, default: Date.now },
+    version:      { type: Number, default: 1 },
   },
   { timestamps: true }
 )

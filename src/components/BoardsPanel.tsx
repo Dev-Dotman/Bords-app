@@ -9,7 +9,7 @@ import { useKanbanStore } from '../store/kanbanStore'
 import { useMediaStore } from '../store/mediaStore'
 import { useDrawingStore } from '../store/drawingStore'
 import { useConnectionStore } from '../store/connectionStore'
-import { Trash2, Edit2, Plus, Layout, X, Share2, Download, Users } from 'lucide-react'
+import { Trash2, Edit2, Plus, Layout, X, Share2, Download, Users, RefreshCw } from 'lucide-react'
 import { useState, useRef, useEffect, useMemo } from 'react'
 import { format } from 'date-fns'
 import { useSession } from 'next-auth/react'
@@ -35,6 +35,10 @@ export function BoardsPanel({ isOpen, onClose }: BoardsPanelProps) {
   const activeContext = useWorkspaceStore((s) => s.activeContext)
   const bords = useDelegationStore((s) => s.bords)
   const fetchBords = useDelegationStore((s) => s.fetchBords)
+  const boardPermissions = useBoardSyncStore((s) => s.boardPermissions)
+  const boardSharedBy = useBoardSyncStore((s) => s.boardSharedBy)
+  const loadAllCloudBoards = useBoardSyncStore((s) => s.loadAllCloudBoards)
+  const isInitialLoading = useBoardSyncStore((s) => s.isInitialLoading)
   const isOrgContext = activeContext?.type === 'organization'
 
   // Filter boards by active workspace context
@@ -44,9 +48,23 @@ export function BoardsPanel({ isOpen, onClose }: BoardsPanelProps) {
     if (activeContext.type === 'organization') {
       return owned.filter(b => b.contextType === 'organization' && b.organizationId === activeContext.organizationId)
     }
-    // Personal context: show boards with no org or explicitly personal
-    return owned.filter(b => !b.contextType || b.contextType === 'personal')
-  }, [allBoards, currentUserId, activeContext])
+    // Personal context: show only boards we OWN (not shared-with-us)
+    return owned.filter(b => {
+      const isPersonal = !b.contextType || b.contextType === 'personal'
+      const isOwner = !boardPermissions[b.id] || boardPermissions[b.id] === 'owner'
+      return isPersonal && isOwner
+    })
+  }, [allBoards, currentUserId, activeContext, boardPermissions])
+
+  // Shared personal boards (boards other people shared with us via sharedWith)
+  const sharedPersonalBoards = useMemo(() => {
+    if (isOrgContext) return []
+    return allBoards.filter(b => {
+      const isPersonal = !b.contextType || b.contextType === 'personal'
+      const perm = boardPermissions[b.id]
+      return isPersonal && perm && perm !== 'owner'
+    })
+  }, [allBoards, boardPermissions, isOrgContext])
 
   // Accessible bords from other owners in this org (via accessList)
   const accessibleBords = useMemo(() => {
@@ -145,6 +163,8 @@ export function BoardsPanel({ isOpen, onClose }: BoardsPanelProps) {
 
   const handleBoardSelect = (boardId: string) => {
     setCurrentBoard(boardId)
+    // Lazily ensure the board's cloud data is fresh (no-op if already loaded)
+    useBoardSyncStore.getState().ensureBoardLoaded(boardId)
     onClose()
   }
 
@@ -153,6 +173,8 @@ export function BoardsPanel({ isOpen, onClose }: BoardsPanelProps) {
     const existingBoard = allBoards.find(b => b.id === bord.localBoardId)
     if (existingBoard) {
       setCurrentBoard(bord.localBoardId)
+      // Lazily ensure cloud data is fresh
+      useBoardSyncStore.getState().ensureBoardLoaded(bord.localBoardId)
       onClose()
       return
     }
@@ -192,12 +214,26 @@ export function BoardsPanel({ isOpen, onClose }: BoardsPanelProps) {
           <h2 className={`text-lg font-semibold ${isDark ? 'text-white' : 'text-gray-800'}`}>
             {activeContext?.type === 'organization' ? activeContext.organizationName : 'My'} Boards
           </h2>
-          <button
-            onClick={onClose}
-            className={`p-2 rounded-lg hover:bg-gray-100 ${isDark ? 'hover:bg-zinc-700' : ''}`}
-          >
-            <X size={20} className={isDark ? 'text-white' : 'text-gray-600'} />
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => loadAllCloudBoards()}
+              disabled={isInitialLoading}
+              className={`p-2 rounded-lg transition-colors ${
+                isDark
+                  ? 'hover:bg-zinc-700 text-zinc-400 hover:text-white'
+                  : 'hover:bg-gray-100 text-gray-500 hover:text-gray-700'
+              }`}
+              title="Reload boards from cloud"
+            >
+              <RefreshCw size={16} className={isInitialLoading ? 'animate-spin' : ''} />
+            </button>
+            <button
+              onClick={onClose}
+              className={`p-2 rounded-lg hover:bg-gray-100 ${isDark ? 'hover:bg-zinc-700' : ''}`}
+            >
+              <X size={20} className={isDark ? 'text-white' : 'text-gray-600'} />
+            </button>
+          </div>
         </div>
 
         {/* Create New Board */}
@@ -259,7 +295,7 @@ export function BoardsPanel({ isOpen, onClose }: BoardsPanelProps) {
       {/* Scrollable Boards List */}
       <div className="flex-1 overflow-y-auto px-4 pb-4">
         <div className="space-y-2">
-          {userBoards.length === 0 && accessibleBords.length === 0 && (
+          {userBoards.length === 0 && accessibleBords.length === 0 && sharedPersonalBoards.length === 0 && (
             <div className={`text-center py-8 ${isDark ? 'text-zinc-500' : 'text-gray-400'}`}>
               <Layout size={32} className="mx-auto mb-2 opacity-50" />
               <p className="text-sm">No boards yet</p>
@@ -358,6 +394,59 @@ export function BoardsPanel({ isOpen, onClose }: BoardsPanelProps) {
             </div>
           ))}
         </div>
+
+        {/* Shared personal boards (boards shared with you by friends) */}
+        {!isOrgContext && sharedPersonalBoards.length > 0 && (
+          <div className="mt-4">
+            <div className={`flex items-center gap-2 mb-2 px-1 ${isDark ? 'text-zinc-400' : 'text-gray-500'}`}>
+              <Users size={14} />
+              <span className="text-xs font-medium uppercase tracking-wide">Shared with you</span>
+            </div>
+            <div className="space-y-2">
+              {sharedPersonalBoards.map((board) => {
+                const isActive = currentBoardId === board.id
+                const perm = boardPermissions[board.id]
+                const sharedBy = boardSharedBy[board.id]
+
+                return (
+                  <div
+                    key={board.id}
+                    className={`
+                      p-3 rounded-lg flex items-center justify-between group
+                      ${isActive
+                        ? isDark ? 'bg-blue-500/20 text-blue-400' : 'bg-blue-50 text-blue-600'
+                        : isDark ? 'hover:bg-zinc-700/50' : 'hover:bg-gray-50'
+                      }
+                      ${isDark ? 'text-white' : 'text-gray-700'}
+                      cursor-pointer
+                    `}
+                    onClick={() => handleBoardSelect(board.id)}
+                  >
+                    <div className="flex items-center gap-3 flex-1 min-w-0">
+                      <Layout size={16} className="shrink-0" />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium truncate">{board.name}</span>
+                          <span className={`shrink-0 text-[10px] font-semibold uppercase px-1.5 py-0.5 rounded-full ${
+                            isDark ? 'bg-violet-500/20 text-violet-400' : 'bg-violet-100 text-violet-600'
+                          }`}>
+                            {perm === 'edit' ? 'Editor' : 'Viewer'}
+                          </span>
+                        </div>
+                        <div className={`text-xs ${isDark ? 'text-zinc-500' : 'text-gray-400'}`}>
+                          {sharedBy
+                            ? `Shared by ${sharedBy.name}`
+                            : format(new Date(board.lastModified), 'MMM d, yyyy')
+                          }
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
 
         {/* Accessible Bords (via accessList — org members only) */}
         {isOrgContext && accessibleBords.length > 0 && (

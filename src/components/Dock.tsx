@@ -1,5 +1,6 @@
 'use client'
 import { useState, useEffect } from 'react'
+import { AnimatePresence } from 'framer-motion'
 import { useThemeStore } from '../store/themeStore'
 import { useGridStore } from '../store/gridStore'
 import { useBoardStore } from '../store/boardStore'
@@ -58,8 +59,7 @@ export function Dock() {
   const [showReminderForm, setShowReminderForm] = useState(false)
   const { addNote } = useNoteStore()
   const { isDragEnabled, toggleDragMode } = useDragModeStore()
-  const [commentPosition, setCommentPosition] = useState<{ x: number; y: number } | null>(null);
-  const { isCommenting, toggleCommenting, comments } = useCommentStore();
+  const { isCommenting, toggleCommenting, setCommenting, comments, serverCommentCounts } = useCommentStore();
   const connections = useConnectionStore((state) => state.connections)
   const isPresentationMode = usePresentationStore((state) => state.isPresentationMode)
   const isFullScreen = useFullScreenStore((state) => state.isFullScreen)
@@ -75,6 +75,13 @@ export function Dock() {
   const { openMediaModal } = useMediaStore()
   const boardPermission = useBoardSyncStore((s) => s.boardPermissions[currentBoardId || ''] || 'owner')
   const isViewOnly = boardPermission === 'view'
+
+  // Comment count: synced boards use server count (from SSE), local boards use local store
+  const isSyncedBoard = !!(currentBoardId && lastSyncedAt[currentBoardId]) || boardPermission === 'view' || boardPermission === 'edit'
+  const boardCommentCount = isSyncedBoard
+    ? (currentBoardId ? serverCommentCounts[currentBoardId] ?? 0 : 0)
+    : comments.filter(c => c.boardId === currentBoardId).length;
+
   const zoom = useGridStore((state) => state.zoom)
   const setZoom = useGridStore((state) => state.setZoom)
   const isMac = typeof navigator !== 'undefined' && /Mac|iPod|iPhone|iPad/.test(navigator.userAgent)
@@ -137,17 +144,7 @@ export function Dock() {
   }
 
   const handleCommentClick = () => {
-    if (!isCommenting) {
-      toggleCommenting();
-      // Position comments in center of screen
-      setCommentPosition({
-        x: window.innerWidth / 2 - 160, // half of 320px width
-        y: window.innerHeight / 2 - 250, // half of 500px height
-      });
-    } else {
-      toggleCommenting();
-      setCommentPosition(null);
-    }
+    toggleCommenting();
   };
 
   const handleAddText = () => {
@@ -284,11 +281,11 @@ export function Dock() {
     { 
       id: 8, 
       icon: MessageSquare, 
-      label: `Comments (${comments.length})`, 
-      description: isViewOnly ? "View-only mode" : !currentBoardId ? "Select/create a board to get started" : `${comments.length} comment${comments.length !== 1 ? 's' : ''} added`,
-      onClick: currentBoardId && !isViewOnly ? handleCommentClick : undefined,
+      label: `Comments (${boardCommentCount})`, 
+      description: !currentBoardId ? "Select/create a board to get started" : `${boardCommentCount} comment${boardCommentCount !== 1 ? 's' : ''} added`,
+      onClick: currentBoardId ? handleCommentClick : undefined,
       isActive: isCommenting,
-      disabled: !currentBoardId || isViewOnly,
+      disabled: !currentBoardId,
       customStyle: isCommenting ? 'text-purple-500 hover:text-purple-600' : undefined
     },
     { 
@@ -455,15 +452,13 @@ export function Dock() {
         />
       )}
 
-      {commentPosition && (
-        <Comments
-          position={commentPosition}
-          onClose={() => {
-            toggleCommenting();
-            setCommentPosition(null);
-          }}
-        />
-      )}
+      <AnimatePresence>
+        {isCommenting && (
+          <Comments
+            onClose={() => setCommenting(false)}
+          />
+        )}
+      </AnimatePresence>
 
       {showNoBoardModal && (
         <div className="fixed inset-0 z-40 flex items-center justify-center">

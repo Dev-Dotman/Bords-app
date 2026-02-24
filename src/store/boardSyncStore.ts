@@ -1,19 +1,44 @@
+/**
+ * boardSyncStore.ts — Zustand store for cloud sync orchestration.
+ *
+ * Heavy helpers (hashing, data gathering, cloud-data application, purging)
+ * live in  @/lib/boardData.ts
+ * Share API helpers live in  @/lib/boardShareApi.ts
+ *
+ * This store now focuses on:
+ *  • sync state (dirty / stale / hashes / permissions)
+ *  • push / pull / merge orchestration
+ *  • selective loading (only fetches the board the user is on)
+ */
+
 import { create } from 'zustand'
+import { persist } from 'zustand/middleware'
 import { toast } from 'react-hot-toast'
 import { useBoardStore } from './boardStore'
-import { useChecklistStore } from './checklistStore'
-import { useKanbanStore } from './kanbanStore'
-import { useNoteStore } from './stickyNoteStore'
-import { useMediaStore } from './mediaStore'
-import { useTextStore } from './textStore'
-import { useDrawingStore } from './drawingStore'
-import { useCommentStore } from './commentStore'
-import { useConnectionStore } from './connectionStore'
-import { useConnectionLineStore } from './connectionLineStore'
-import { useGridStore } from './gridStore'
-import { useThemeStore } from './themeStore'
-import { useZIndexStore } from './zIndexStore'
-import { useReminderStore } from './reminderStore'
+import {
+  computeHash,
+  gatherBoardData,
+  applyCloudData,
+  purgeLocalBoard,
+  getBaseSnapshot,
+  setBaseSnapshot,
+} from '@/lib/boardData'
+import {
+  mergeBoards,
+  applyConflictResolutions,
+  type MergeConflict,
+  type AutoResolved,
+} from '@/lib/boardMerge'
+import {
+  getShareSettings as _getShareSettings,
+  updateVisibility as _updateVisibility,
+  addShareUser as _addShareUser,
+  removeShareUser as _removeShareUser,
+  updateSharePermission as _updateSharePermission,
+} from '@/lib/boardShareApi'
+
+// Re-export for backward compat (BoardSyncControls, PersonalBordAccessModal, etc.)
+export type { ShareEntry } from '@/lib/boardShareApi'
 
 /* ─────────────────────── Types ─────────────────────── */
 
@@ -26,13 +51,18 @@ export interface CloudBoardMeta {
   lastSyncedAt: string
   createdAt: string
   updatedAt: string
+  sharedBy?: { name: string; email: string } | null
 }
 
-export interface ShareEntry {
-  userId: string
-  email: string
-  permission: 'view' | 'edit'
-  addedAt: string
+export interface MergeState {
+  localBoardId: string
+  conflicts: MergeConflict[]
+  merged: any
+  autoResolved: AutoResolved[]
+  local: any
+  cloud: any
+  cloudHash: string
+  boardName: string
 }
 
 interface BoardSyncStore {
@@ -41,13 +71,16 @@ interface BoardSyncStore {
   isInitialLoading: boolean
   hasLoadedFromCloud: boolean
   lastSyncedAt: Record<string, Date>
-  contentHashes: Record<string, string>   // localBoardId → last-known cloud hash
-  dirtyBoards: Set<string>                // boards with unsaved local changes
-  staleBoards: Set<string>                // boards with newer cloud versions
-  deletedBoardIds: Set<string>            // boards deleted locally — skip on re-import
+  contentHashes: Record<string, string>     // localBoardId → last-known cloud hash
+  dirtyBoards: Set<string>                  // boards with unsaved local changes
+  staleBoards: Set<string>                  // boards with newer cloud versions
+  deletedBoardIds: Set<string>              // boards deleted locally — skip on re-import
   cloudBoards: CloudBoardMeta[]
-  boardPermissions: Record<string, 'owner' | 'view' | 'edit'>  // localBoardId → permission
+  boardPermissions: Record<string, 'owner' | 'view' | 'edit'>
+  boardSharedBy: Record<string, { name: string; email: string }>  // localBoardId → who shared it
   error: string | null
+  mergeState: MergeState | null             // active merge conflict awaiting resolution
+  loadedBoards: Set<string>                 // boards whose full data was fetched this session
 
   // Core sync actions
   syncBoardToCloud: (localBoardId: string) => Promise<void>
@@ -56,426 +89,59 @@ interface BoardSyncStore {
   listCloudBoards: () => Promise<void>
   loadAllCloudBoards: () => Promise<void>
 
+  // Selective loading — only fetch the board the user is currently on
+  ensureBoardLoaded: (localBoardId: string) => Promise<void>
+
   // Smart sync
   markDirty: (localBoardId: string) => void
   computeLocalHash: (localBoardId: string) => string
   syncDirtyBoards: () => Promise<void>
-  checkForStaleBoards: () => Promise<void>   // Tab-focus check (no auto-apply)
-  refreshStaleBoards: () => Promise<void>    // User-triggered: pull stale boards
+  checkForStaleBoards: () => Promise<void>
+  refreshStaleBoards: () => Promise<void>
   dismissStale: (localBoardId: string) => void
 
   // Permission
   setBoardPermission: (localBoardId: string, permission: 'owner' | 'view' | 'edit') => void
   getCurrentBoardPermission: () => 'owner' | 'view' | 'edit'
 
-  // Share actions
-  getShareSettings: (localBoardId: string) => Promise<{ visibility: string; shareToken: string | null; sharedWith: ShareEntry[] } | null>
+  // Share (thin wrappers — logic lives in boardShareApi.ts)
+  getShareSettings: (localBoardId: string) => Promise<{ visibility: string; shareToken: string | null; sharedWith: any[] } | null>
   updateVisibility: (localBoardId: string, visibility: 'private' | 'public' | 'shared') => Promise<void>
   addShareUser: (localBoardId: string, email: string, permission: 'view' | 'edit') => Promise<void>
   removeShareUser: (localBoardId: string, userId: string) => Promise<void>
   updateSharePermission: (localBoardId: string, userId: string, permission: 'view' | 'edit') => Promise<void>
+
+  // Merge conflict resolution
+  resolveConflicts: (resolutions: Record<string, 'local' | 'cloud' | 'both'>) => Promise<void>
+  dismissMerge: () => void
 }
 
-/* ─────── Fast hash (djb2 — no crypto import needed on client) ─────── */
+/* ── Workspace-context helper (reused by push actions) ── */
 
-function djb2Hash(str: string): string {
-  let hash = 5381
-  for (let i = 0; i < str.length; i++) {
-    hash = ((hash << 5) + hash + str.charCodeAt(i)) >>> 0
-  }
-  return hash.toString(36)
-}
-
-function computeHash(localBoardId: string): string {
-  const boardStore = useBoardStore.getState()
-  const board = boardStore.boards.find(b => b.id === localBoardId)
-  if (!board) return ''
-
-  const checklistStore = useChecklistStore.getState()
-  const kanbanStore = useKanbanStore.getState()
-  const stickyStore = useNoteStore.getState()
-  const mediaStore = useMediaStore.getState()
-  const textStore = useTextStore.getState()
-  const drawingStore = useDrawingStore.getState()
-  const commentStore = useCommentStore.getState()
-  const connectionStore = useConnectionStore.getState()
-  const reminderStore = useReminderStore.getState()
-  const connectionLineStore = useConnectionLineStore.getState()
-  const gridStore = useGridStore.getState()
-  const themeStore = useThemeStore.getState()
-  const zIndexStore = useZIndexStore.getState()
-
-  const checklists = checklistStore.checklists.filter((c: any) => board.checklists.includes(c.id))
-  const kanbans = kanbanStore.boards.filter((k: any) => board.kanbans.includes(k.id))
-  const notes = stickyStore.notes.filter((n: any) => board.notes.includes(n.id))
-  const medias = mediaStore.medias.filter((m: any) => board.medias.includes(m.id))
-  const texts = textStore.texts.filter((t: any) => board.texts.includes(t.id))
-  const drawings = drawingStore.drawings.filter((d: any) => board.drawings.includes(d.id))
-  const comments = commentStore.comments.filter((c: any) => c.boardId === localBoardId)
-  const connections = connectionStore.connections.filter((c: any) => c.boardId === localBoardId)
-  const reminders = reminderStore.reminders.filter((r: any) => (board.reminders || []).includes(r.id))
-
-  const allItemIds = new Set([
-    ...board.notes, ...board.checklists, ...board.texts,
-    ...board.kanbans, ...board.medias, ...board.drawings,
-    ...(board.reminders || []),
-  ])
-  const zEntries = Object.entries(zIndexStore.zIndexMap)
-    .filter(([id]) => allItemIds.has(id))
-    .map(([itemId, zIndex]) => ({ itemId, zIndex }))
-
-  // Build a deterministic string of all content
-  const payload = JSON.stringify({
-    checklists, kanbans, notes, medias, texts, drawings, comments, connections, reminders,
-    itemIds: {
-      notes: board.notes, checklists: board.checklists, texts: board.texts,
-      connections: board.connections, drawings: board.drawings,
-      kanbans: board.kanbans, medias: board.medias,
-      reminders: board.reminders || [],
-    },
-    bg: [board.backgroundImage, board.backgroundColor, board.backgroundOverlay,
-         board.backgroundOverlayColor, board.backgroundBlurLevel],
-    settings: [
-      { colorMode: connectionLineStore.colorMode, monochromaticColor: connectionLineStore.monochromaticColor },
-      { isGridVisible: gridStore.isGridVisible, gridColor: gridStore.gridColor, zoom: gridStore.zoom,
-        gridSize: gridStore.gridSize, snapEnabled: gridStore.snapEnabled },
-      { isDark: themeStore.isDark, colorTheme: themeStore.colorTheme },
-    ],
-    zIndex: { counter: zIndexStore.counter, entries: zEntries },
-  })
-
-  return djb2Hash(payload)
-}
-
-/* ─────────────── Helpers: gather all data for a board ─────────────── */
-
-function gatherBoardData(localBoardId: string) {
-  const boardStore = useBoardStore.getState()
-  const board = boardStore.boards.find(b => b.id === localBoardId)
-  if (!board) return null
-
-  const checklistStore = useChecklistStore.getState()
-  const kanbanStore = useKanbanStore.getState()
-  const stickyStore = useNoteStore.getState()
-  const mediaStore = useMediaStore.getState()
-  const textStore = useTextStore.getState()
-  const drawingStore = useDrawingStore.getState()
-  const commentStore = useCommentStore.getState()
-  const connectionStore = useConnectionStore.getState()
-  const reminderStore = useReminderStore.getState()
-  const connectionLineStore = useConnectionLineStore.getState()
-  const gridStore = useGridStore.getState()
-  const themeStore = useThemeStore.getState()
-  const zIndexStore = useZIndexStore.getState()
-
-  // Filter items belonging to this board by ID arrays
-  const checklists = checklistStore.checklists.filter((c: any) => board.checklists.includes(c.id))
-  const kanbanBoards = kanbanStore.boards.filter((k: any) => board.kanbans.includes(k.id))
-  const stickyNotes = stickyStore.notes.filter((n: any) => board.notes.includes(n.id))
-  const mediaItems = mediaStore.medias.filter((m: any) => board.medias.includes(m.id))
-  const textElements = textStore.texts.filter((t: any) => board.texts.includes(t.id))
-  const drawings = drawingStore.drawings.filter((d: any) => board.drawings.includes(d.id))
-  const comments = commentStore.comments.filter((c: any) => c.boardId === localBoardId)
-  const connections = connectionStore.connections.filter((c: any) => c.boardId === localBoardId)
-  const reminders = reminderStore.reminders.filter((r: any) => (board.reminders || []).includes(r.id))
-
-  // Z-index data: only entries for items in this board
-  const allItemIds = new Set([
-    ...board.notes, ...board.checklists, ...board.texts,
-    ...board.kanbans, ...board.medias, ...board.drawings,
-    ...(board.reminders || []),
-  ])
-  const zEntries = Object.entries(zIndexStore.zIndexMap)
-    .filter(([id]) => allItemIds.has(id))
-    .map(([itemId, zIndex]) => ({ itemId, zIndex }))
-
-  return {
-    backgroundImage:        board.backgroundImage || null,
-    backgroundColor:        board.backgroundColor || null,
-    backgroundOverlay:      board.backgroundOverlay || false,
-    backgroundOverlayColor: board.backgroundOverlayColor || null,
-    backgroundBlurLevel:    board.backgroundBlurLevel || null,
-    checklists,
-    kanbanBoards,
-    stickyNotes,
-    mediaItems,
-    textElements,
-    drawings,
-    comments,
-    connections,
-    reminders,
-    connectionLineSettings: {
-      colorMode: connectionLineStore.colorMode,
-      monochromaticColor: connectionLineStore.monochromaticColor,
-    },
-    gridSettings: {
-      isGridVisible: gridStore.isGridVisible,
-      gridColor: gridStore.gridColor,
-      zoom: gridStore.zoom,
-      gridSize: gridStore.gridSize,
-      snapEnabled: gridStore.snapEnabled,
-    },
-    themeSettings: {
-      isDark: themeStore.isDark,
-      colorTheme: themeStore.colorTheme,
-    },
-    zIndexData: {
-      counter: zIndexStore.counter,
-      entries: zEntries,
-    },
-    itemIds: {
-      notes: board.notes,
-      checklists: board.checklists,
-      texts: board.texts,
-      connections: board.connections,
-      drawings: board.drawings,
-      kanbans: board.kanbans,
-      medias: board.medias,
-      reminders: board.reminders || [],
-    },
-  }
-}
-
-/* ─────────────── Helper: apply cloud data to local stores ─────────────── */
-
-function applyCloudData(localBoardId: string, cloud: any, opts?: { skipTheme?: boolean }) {
-  const boardStore = useBoardStore.getState()
-  const checklistStore = useChecklistStore.getState()
-  const kanbanStore = useKanbanStore.getState()
-  const stickyStore = useNoteStore.getState()
-  const mediaStore = useMediaStore.getState()
-  const textStore = useTextStore.getState()
-  const drawingStore = useDrawingStore.getState()
-  const commentStore = useCommentStore.getState()
-  const connectionStore = useConnectionStore.getState()
-  const reminderStore = useReminderStore.getState()
-  const connectionLineStore = useConnectionLineStore.getState()
-  const gridStore = useGridStore.getState()
-  const themeStore = useThemeStore.getState()
-  const zIndexStore = useZIndexStore.getState()
-
-  const board = boardStore.boards.find((b: any) => b.id === localBoardId)
-
-  // If the local board doesn't exist, create it
-  if (!board) {
-    const newBoard = {
-      id: localBoardId,
-      userId: boardStore.currentUserId || '',
-      name: cloud.name || 'Synced Board',
-      createdAt: new Date(),
-      lastModified: new Date(),
-      notes: cloud.itemIds?.notes || [],
-      checklists: cloud.itemIds?.checklists || [],
-      texts: cloud.itemIds?.texts || [],
-      connections: cloud.itemIds?.connections || [],
-      drawings: cloud.itemIds?.drawings || [],
-      kanbans: cloud.itemIds?.kanbans || [],
-      medias: cloud.itemIds?.medias || [],
-      reminders: cloud.itemIds?.reminders || [],
-      backgroundImage: cloud.backgroundImage || undefined,
-      backgroundColor: cloud.backgroundColor || undefined,
-      backgroundOverlay: cloud.backgroundOverlay || undefined,
-      backgroundOverlayColor: cloud.backgroundOverlayColor || undefined,
-      backgroundBlurLevel: cloud.backgroundBlurLevel || undefined,
-    }
-    boardStore.boards.push(newBoard)
-    useBoardStore.setState({ boards: [...boardStore.boards] })
-  } else {
-    // Update board metadata
-    boardStore.updateBoard(localBoardId, {
-      name: cloud.name || board.name,
-      notes: cloud.itemIds?.notes || board.notes,
-      checklists: cloud.itemIds?.checklists || board.checklists,
-      texts: cloud.itemIds?.texts || board.texts,
-      connections: cloud.itemIds?.connections || board.connections,
-      drawings: cloud.itemIds?.drawings || board.drawings,
-      kanbans: cloud.itemIds?.kanbans || board.kanbans,
-      medias: cloud.itemIds?.medias || board.medias,
-      reminders: cloud.itemIds?.reminders || board.reminders || [],
-      backgroundImage: cloud.backgroundImage || undefined,
-      backgroundColor: cloud.backgroundColor || undefined,
-      backgroundOverlay: cloud.backgroundOverlay ?? undefined,
-      backgroundOverlayColor: cloud.backgroundOverlayColor || undefined,
-      backgroundBlurLevel: cloud.backgroundBlurLevel || undefined,
-    })
-  }
-
-  // Replace content in each store — remove old items for this board, add cloud items
-
-  // Checklists
-  if (cloud.checklists) {
-    const boardChecklistIds = new Set(cloud.itemIds?.checklists || [])
-    const otherChecklists = checklistStore.checklists.filter((c: any) => !boardChecklistIds.has(c.id))
-    useChecklistStore.setState({ checklists: [...otherChecklists, ...cloud.checklists] })
-  }
-
-  // Kanban boards
-  if (cloud.kanbanBoards) {
-    const boardKanbanIds = new Set(cloud.itemIds?.kanbans || [])
-    const otherKanbans = kanbanStore.boards.filter((k: any) => !boardKanbanIds.has(k.id))
-    useKanbanStore.setState({ boards: [...otherKanbans, ...cloud.kanbanBoards] })
-  }
-
-  // Sticky notes
-  if (cloud.stickyNotes) {
-    const boardNoteIds = new Set(cloud.itemIds?.notes || [])
-    const otherNotes = stickyStore.notes.filter((n: any) => !boardNoteIds.has(n.id))
-    useNoteStore.setState({ notes: [...otherNotes, ...cloud.stickyNotes] })
-  }
-
-  // Media
-  if (cloud.mediaItems) {
-    const boardMediaIds = new Set(cloud.itemIds?.medias || [])
-    const otherMedia = mediaStore.medias.filter((m: any) => !boardMediaIds.has(m.id))
-    useMediaStore.setState({ medias: [...otherMedia, ...cloud.mediaItems] })
-  }
-
-  // Texts
-  if (cloud.textElements) {
-    const boardTextIds = new Set(cloud.itemIds?.texts || [])
-    const otherTexts = textStore.texts.filter((t: any) => !boardTextIds.has(t.id))
-    useTextStore.setState({ texts: [...otherTexts, ...cloud.textElements] })
-  }
-
-  // Drawings
-  if (cloud.drawings) {
-    const boardDrawingIds = new Set(cloud.itemIds?.drawings || [])
-    const otherDrawings = drawingStore.drawings.filter((d: any) => !boardDrawingIds.has(d.id))
-    useDrawingStore.setState({ drawings: [...otherDrawings, ...cloud.drawings] })
-  }
-
-  // Comments
-  if (cloud.comments) {
-    const otherComments = commentStore.comments.filter((c: any) => c.boardId !== localBoardId)
-    useCommentStore.setState({ comments: [...otherComments, ...cloud.comments] })
-  }
-
-  // Connections
-  if (cloud.connections) {
-    const otherConnections = connectionStore.connections.filter((c: any) => c.boardId !== localBoardId)
-    useConnectionStore.setState({ connections: [...otherConnections, ...cloud.connections] })
-  }
-
-  // Reminders
-  if (cloud.reminders) {
-    const boardReminderIds = new Set(cloud.itemIds?.reminders || [])
-    const otherReminders = reminderStore.reminders.filter((r: any) => !boardReminderIds.has(r.id))
-    useReminderStore.setState({ reminders: [...otherReminders, ...cloud.reminders] })
-  }
-
-  // Connection line settings
-  if (cloud.connectionLineSettings) {
-    connectionLineStore.setColorMode(cloud.connectionLineSettings.colorMode)
-    connectionLineStore.setMonochromaticColor(cloud.connectionLineSettings.monochromaticColor)
-  }
-
-  // Grid settings
-  if (cloud.gridSettings) {
-    if (cloud.gridSettings.isGridVisible !== gridStore.isGridVisible) gridStore.toggleGrid()
-    gridStore.setGridColor(cloud.gridSettings.gridColor)
-    gridStore.setGridSize(cloud.gridSettings.gridSize)
-    if (cloud.gridSettings.snapEnabled !== gridStore.snapEnabled) gridStore.toggleSnap()
-    gridStore.setZoom(cloud.gridSettings.zoom)
-  }
-
-  // Theme settings — skip for shared boards so viewers keep their own theme
-  if (cloud.themeSettings && !opts?.skipTheme) {
-    if (cloud.themeSettings.isDark !== themeStore.isDark) themeStore.toggleDark()
-    themeStore.setColorTheme(cloud.themeSettings.colorTheme)
-  }
-
-  // Z-index data
-  if (cloud.zIndexData) {
-    const newMap = { ...zIndexStore.zIndexMap }
-    for (const entry of cloud.zIndexData.entries || []) {
-      newMap[entry.itemId] = entry.zIndex
-    }
-    useZIndexStore.setState({
-      counter: Math.max(zIndexStore.counter, cloud.zIndexData.counter || 0),
-      zIndexMap: newMap,
-    })
-  }
-
-  // Schedule connection line rewire after DOM renders the loaded items
-  if (typeof window !== 'undefined' && cloud.connections?.length) {
-    setTimeout(() => {
-      try {
-        const { scheduleConnectionUpdate } = require('../components/Connections')
-        scheduleConnectionUpdate()
-        // Second pass after layout settles (items may animate into position)
-        setTimeout(() => scheduleConnectionUpdate(), 300)
-      } catch { /* Connections component not mounted yet */ }
-    }, 100)
-  }
-}
-
-/* ─── Helper: purge all local data for a board (access revoked / deleted) ─── */
-
-function purgeLocalBoard(localBoardId: string) {
-  const boardStore = useBoardStore.getState()
-  const board = boardStore.boards.find((b: any) => b.id === localBoardId)
-  if (!board) return
-
-  // Remove items from individual stores
-  const checklistStore = useChecklistStore.getState()
-  const kanbanStore = useKanbanStore.getState()
-  const stickyStore = useNoteStore.getState()
-  const mediaStore = useMediaStore.getState()
-  const textStore = useTextStore.getState()
-  const drawingStore = useDrawingStore.getState()
-  const commentStore = useCommentStore.getState()
-  const connectionStore = useConnectionStore.getState()
-  const reminderStore = useReminderStore.getState()
-  const zIndexStore = useZIndexStore.getState()
-
-  const noteIds = new Set(board.notes || [])
-  const checklistIds = new Set(board.checklists || [])
-  const textIds = new Set(board.texts || [])
-  const kanbanIds = new Set(board.kanbans || [])
-  const mediaIds = new Set(board.medias || [])
-  const drawingIds = new Set(board.drawings || [])
-  const reminderIds = new Set(board.reminders || [])
-
-  useNoteStore.setState({ notes: stickyStore.notes.filter((n: any) => !noteIds.has(n.id)) })
-  useChecklistStore.setState({ checklists: checklistStore.checklists.filter((c: any) => !checklistIds.has(c.id)) })
-  useTextStore.setState({ texts: textStore.texts.filter((t: any) => !textIds.has(t.id)) })
-  useKanbanStore.setState({ boards: kanbanStore.boards.filter((k: any) => !kanbanIds.has(k.id)) })
-  useMediaStore.setState({ medias: mediaStore.medias.filter((m: any) => !mediaIds.has(m.id)) })
-  useDrawingStore.setState({ drawings: drawingStore.drawings.filter((d: any) => !drawingIds.has(d.id)) })
-  useReminderStore.setState({ reminders: reminderStore.reminders.filter((r: any) => !reminderIds.has(r.id)) })
-  useCommentStore.setState({ comments: commentStore.comments.filter((c: any) => c.boardId !== localBoardId) })
-  useConnectionStore.setState({ connections: connectionStore.connections.filter((c: any) => c.boardId !== localBoardId) })
-
-  // Clean up z-index entries
-  const allItemIds = [...noteIds, ...checklistIds, ...textIds, ...kanbanIds, ...mediaIds, ...drawingIds, ...reminderIds]
-  const newZMap = { ...zIndexStore.zIndexMap }
-  for (const id of allItemIds) newZMap[id] && delete newZMap[id]
-  useZIndexStore.setState({ zIndexMap: newZMap })
-
-  // Remove the board itself; switch to a board from the same context
-  const currentId = boardStore.currentBoardId
-  const remaining = boardStore.boards.filter((b: any) => b.id !== localBoardId)
-
-  let nextBoardId: string | null = currentId === localBoardId ? null : currentId
-  if (currentId === localBoardId && remaining.length > 0 && board) {
-    const sameContext = remaining.filter((b: any) => {
-      if (board.contextType === 'organization') {
-        return b.contextType === 'organization' && b.organizationId === board.organizationId
+async function resolveWorkspacePayload(): Promise<Record<string, any>> {
+  try {
+    const { useWorkspaceStore } = await import('./workspaceStore')
+    const ws = useWorkspaceStore.getState()
+    const ctx = ws.activeContext
+    if (ctx && ctx.type === 'organization') {
+      return {
+        organizationId: ctx.organizationId,
+        contextType: 'organization',
+        workspaceId: ws.orgContainerWorkspace?._id || undefined,
       }
-      return !b.contextType || b.contextType === 'personal'
-    })
-    nextBoardId = sameContext.length > 0 ? sameContext[0].id : null
+    }
+    return {
+      contextType: 'personal',
+      workspaceId: ws.personalWorkspace?._id || undefined,
+    }
+  } catch {
+    return {}
   }
-
-  useBoardStore.setState({
-    boards: remaining,
-    currentBoardId: nextBoardId,
-  })
 }
 
 /* ─────────────────────── Store ─────────────────────── */
 
-export const useBoardSyncStore = create<BoardSyncStore>()((set, get) => ({
+export const useBoardSyncStore = create<BoardSyncStore>()(persist((set, get) => ({
   isSyncing: false,
   isInitialLoading: false,
   hasLoadedFromCloud: false,
@@ -486,9 +152,13 @@ export const useBoardSyncStore = create<BoardSyncStore>()((set, get) => ({
   deletedBoardIds: new Set<string>(),
   cloudBoards: [],
   boardPermissions: {},
+  boardSharedBy: {},
   error: null,
+  mergeState: null,
+  loadedBoards: new Set<string>(),
 
-  /* ── Permission helpers ── */
+  /* ══════════════ Permission helpers ══════════════ */
+
   setBoardPermission: (localBoardId, permission) => {
     set(s => ({
       boardPermissions: { ...s.boardPermissions, [localBoardId]: permission },
@@ -501,14 +171,12 @@ export const useBoardSyncStore = create<BoardSyncStore>()((set, get) => ({
     return get().boardPermissions[currentBoardId] || 'owner'
   },
 
-  /* ── Push to cloud ── */
+  /* ══════════════ Push to cloud (optimistic locking + auto-merge) ══════════════ */
+
   syncBoardToCloud: async (localBoardId: string) => {
     const boardStore = useBoardStore.getState()
     const board = boardStore.boards.find(b => b.id === localBoardId)
-    if (!board) {
-      toast.error('Board not found')
-      return
-    }
+    if (!board) { toast.error('Board not found'); return }
 
     set({ isSyncing: true, error: null })
 
@@ -516,62 +184,110 @@ export const useBoardSyncStore = create<BoardSyncStore>()((set, get) => ({
       const boardData = gatherBoardData(localBoardId)
       if (!boardData) throw new Error('Could not gather board data')
 
-      // Resolve workspace context for the sync payload
-      let workspacePayload: Record<string, any> = {}
-      try {
-        const { useWorkspaceStore } = await import('./workspaceStore')
-        const ws = useWorkspaceStore.getState()
-        const ctx = ws.activeContext
-        if (ctx && ctx.type === 'organization') {
-          workspacePayload = {
-            organizationId: ctx.organizationId,
-            contextType: 'organization',
-            workspaceId: ws.orgContainerWorkspace?._id || undefined,
-          }
-        } else {
-          workspacePayload = {
-            contextType: 'personal',
-            workspaceId: ws.personalWorkspace?._id || undefined,
-          }
-        }
-      } catch { /* workspace store not ready — personal fallback */ }
+      const workspacePayload = await resolveWorkspacePayload()
+      const baseHash = get().contentHashes[localBoardId] || ''
 
-      const res = await fetch('/api/boards/sync', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          localBoardId,
-          name: board.name,
-          board: boardData,
-          ...workspacePayload,
-        }),
-      })
-
-      if (!res.ok) {
-        const err = await res.json()
-        throw new Error(err.error || 'Failed to sync')
+      const pushBoard = async (data: any, bHash: string): Promise<Response> => {
+        return fetch('/api/boards/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            localBoardId,
+            name: board.name,
+            board: data,
+            baseHash: bHash,
+            ...workspacePayload,
+          }),
+        })
       }
 
+      let res = await pushBoard(boardData, baseHash)
+
+      /* ── 409 MERGE_REQUIRED ── */
+      if (res.status === 409) {
+        const conflictData = await res.json()
+        if (conflictData.code !== 'MERGE_REQUIRED') throw new Error(conflictData.error || 'Conflict')
+
+        const cloudBoard = conflictData.cloudBoard
+        const cloudHash  = conflictData.cloudHash
+        const base       = getBaseSnapshot(localBoardId)
+
+        if (!base) {
+          // No base — let user pick whole board
+          set({
+            isSyncing: false,
+            mergeState: {
+              localBoardId,
+              conflicts: [{
+                collection: '_board', itemId: '_board', type: 'both_modified',
+                localVersion: boardData, cloudVersion: cloudBoard,
+                description: 'This board was modified by another editor. No merge base is available — please choose which version to keep.',
+              }],
+              merged: cloudBoard,
+              autoResolved: [],
+              local: boardData,
+              cloud: cloudBoard,
+              cloudHash,
+              boardName: board.name,
+            },
+          })
+          return
+        }
+
+        // Three-way merge
+        const { merged, conflicts, autoResolved, hasConflicts } = mergeBoards(base, boardData, cloudBoard)
+
+        if (!hasConflicts) {
+          toast.success(`Auto-merged ${autoResolved.length} change${autoResolved.length !== 1 ? 's' : ''}`)
+          res = await pushBoard(merged, cloudHash)
+          if (res.status === 409) throw new Error('Board changed again during merge — please sync again')
+          if (!res.ok) { const err = await res.json(); throw new Error(err.error || 'Failed to sync merged board') }
+
+          applyCloudData(localBoardId, { ...merged, name: board.name }, { skipTheme: get().boardPermissions[localBoardId] !== 'owner' })
+          const data = await res.json()
+          const newDirty = new Set(get().dirtyBoards); newDirty.delete(localBoardId)
+          set(s => ({
+            isSyncing: false,
+            lastSyncedAt: { ...s.lastSyncedAt, [localBoardId]: new Date(data.lastSyncedAt) },
+            contentHashes: { ...s.contentHashes, [localBoardId]: data.contentHash || '' },
+            dirtyBoards: newDirty,
+          }))
+          setBaseSnapshot(localBoardId, merged)
+          toast.success('Board synced to cloud')
+          return
+        }
+
+        // Has conflicts — surface modal
+        set({
+          isSyncing: false,
+          mergeState: { localBoardId, conflicts, merged, autoResolved, local: boardData, cloud: cloudBoard, cloudHash, boardName: board.name },
+        })
+        toast('Merge conflicts detected — please resolve them', { icon: '⚠️', duration: 5000 })
+        return
+      }
+
+      /* ── Normal success ── */
+      if (!res.ok) { const err = await res.json(); throw new Error(err.error || 'Failed to sync') }
+
       const data = await res.json()
-      const newDirty = new Set(get().dirtyBoards)
-      newDirty.delete(localBoardId)
+      const newDirty = new Set(get().dirtyBoards); newDirty.delete(localBoardId)
       set(s => ({
         isSyncing: false,
         lastSyncedAt: { ...s.lastSyncedAt, [localBoardId]: new Date(data.lastSyncedAt) },
         contentHashes: { ...s.contentHashes, [localBoardId]: data.contentHash || '' },
         dirtyBoards: newDirty,
       }))
+      setBaseSnapshot(localBoardId, boardData)
 
-      // Auto-create Bord record for org boards (enables access list management)
+      // Auto-create Bord record for org boards
       if (workspacePayload.contextType === 'organization' && workspacePayload.organizationId) {
         try {
           const { useDelegationStore } = await import('./delegationStore')
           const delegation = useDelegationStore.getState()
-          const existingBord = delegation.bords.find(b => b.localBoardId === localBoardId)
-          if (!existingBord) {
+          if (!delegation.bords.find(b => b.localBoardId === localBoardId)) {
             await delegation.linkBoardToOrg(workspacePayload.organizationId, localBoardId, board.name)
           }
-        } catch { /* delegation store not ready — skip */ }
+        } catch { /* delegation store not ready */ }
       }
 
       toast.success('Board synced to cloud')
@@ -581,61 +297,61 @@ export const useBoardSyncStore = create<BoardSyncStore>()((set, get) => ({
     }
   },
 
-  /* ── Pull from cloud ── */
+  /* ══════════════ Pull single board from cloud ══════════════ */
+
   loadBoardFromCloud: async (localBoardId: string) => {
     set({ isSyncing: true, error: null })
 
     try {
       const res = await fetch(`/api/boards/sync/${localBoardId}`)
-      if (!res.ok) {
-        const err = await res.json()
-        throw new Error(err.error || 'Failed to load')
-      }
+      if (!res.ok) { const err = await res.json(); throw new Error(err.error || 'Failed to load') }
 
-      const { board, permission } = await res.json()
+      const { board: cloudBoard, permission } = await res.json()
       const perm = permission || 'owner'
-      
-      // Track permission for this board
+      const cloudHash = cloudBoard.contentHash || ''
+
       set(s => ({
         boardPermissions: { ...s.boardPermissions, [localBoardId]: perm },
       }))
 
-      // Skip theme sync for shared boards (non-owner) so viewers keep their own theme
-      applyCloudData(localBoardId, board, { skipTheme: perm !== 'owner' })
+      // Reload always overwrites local state with the cloud version
+      applyCloudData(localBoardId, cloudBoard, { skipTheme: perm !== 'owner' })
+      setBaseSnapshot(localBoardId, cloudBoard)
 
+      const newDirty = new Set(get().dirtyBoards); newDirty.delete(localBoardId)
+      const newStale = new Set(get().staleBoards); newStale.delete(localBoardId)
+      const newLoaded = new Set(get().loadedBoards); newLoaded.add(localBoardId)
       set(s => ({
         isSyncing: false,
-        lastSyncedAt: { ...s.lastSyncedAt, [localBoardId]: new Date(board.lastSyncedAt) },
+        lastSyncedAt: { ...s.lastSyncedAt, [localBoardId]: new Date(cloudBoard.lastSyncedAt) },
+        contentHashes: { ...s.contentHashes, [localBoardId]: cloudHash },
+        dirtyBoards: newDirty,
+        staleBoards: newStale,
+        loadedBoards: newLoaded,
       }))
-      toast.success('Board loaded from cloud')
+      toast.success('Board reloaded from cloud')
     } catch (error: any) {
       set({ isSyncing: false, error: error.message })
-      toast.error(`Load failed: ${error.message}`)
+      toast.error(`Reload failed: ${error.message}`)
     }
   },
 
-  /* ── Delete from cloud ── */
+  /* ══════════════ Delete from cloud ══════════════ */
+
   deleteBoardFromCloud: async (localBoardId: string) => {
-    // Immediately mark as deleted so sync loops won't re-import it
     set(s => ({ deletedBoardIds: new Set(s.deletedBoardIds).add(localBoardId) }))
 
     try {
       const res = await fetch(`/api/boards/sync/${localBoardId}`, { method: 'DELETE' })
-      if (!res.ok) {
-        const err = await res.json()
-        throw new Error(err.error || 'Failed to delete from cloud')
-      }
+      if (!res.ok) { const err = await res.json(); throw new Error(err.error || 'Failed to delete from cloud') }
 
       set(s => {
-        const updated = { ...s.lastSyncedAt }
-        delete updated[localBoardId]
-        const hashes = { ...s.contentHashes }
-        delete hashes[localBoardId]
-        const dirty = new Set(s.dirtyBoards)
-        dirty.delete(localBoardId)
-        const stale = new Set(s.staleBoards)
-        stale.delete(localBoardId)
-        return { lastSyncedAt: updated, contentHashes: hashes, dirtyBoards: dirty, staleBoards: stale }
+        const updated = { ...s.lastSyncedAt }; delete updated[localBoardId]
+        const hashes = { ...s.contentHashes }; delete hashes[localBoardId]
+        const dirty = new Set(s.dirtyBoards); dirty.delete(localBoardId)
+        const stale = new Set(s.staleBoards); stale.delete(localBoardId)
+        const loaded = new Set(s.loadedBoards); loaded.delete(localBoardId)
+        return { lastSyncedAt: updated, contentHashes: hashes, dirtyBoards: dirty, staleBoards: stale, loadedBoards: loaded }
       })
       toast.success('Board removed from cloud')
     } catch (error: any) {
@@ -643,7 +359,8 @@ export const useBoardSyncStore = create<BoardSyncStore>()((set, get) => ({
     }
   },
 
-  /* ── List all cloud boards ── */
+  /* ══════════════ List cloud boards (metadata only) ══════════════ */
+
   listCloudBoards: async () => {
     try {
       const res = await fetch('/api/boards/sync')
@@ -660,19 +377,73 @@ export const useBoardSyncStore = create<BoardSyncStore>()((set, get) => ({
     }
   },
 
-  /* ── Load ALL cloud boards on login (hash-based smart sync) ── */
+  /* ══════════════ Selective load — fetch only what the user needs ══════════════ */
+
+  /**
+   * Called when the user switches boards. Only fetches full board data if:
+   *  1. Board not yet loaded this session, OR
+   *  2. Board is marked stale (cloud version is newer)
+   * For boards already loaded + not stale, this is a no-op.
+   */
+  ensureBoardLoaded: async (localBoardId: string) => {
+    const { loadedBoards, staleBoards, deletedBoardIds, contentHashes, boardPermissions } = get()
+
+    // Skip boards that were deliberately deleted
+    if (deletedBoardIds.has(localBoardId)) return
+
+    const isLoaded = loadedBoards.has(localBoardId)
+    const isStale  = staleBoards.has(localBoardId)
+    const boardStore = useBoardStore.getState()
+    const existsLocally = boardStore.boards.some(b => b.id === localBoardId)
+
+    // Already loaded this session, not stale, exists locally → nothing to do
+    if (isLoaded && !isStale && existsLocally) return
+
+    // If it exists locally, has a matching hash, and isn't stale → mark loaded, skip fetch
+    if (existsLocally && !isStale) {
+      const localHash = computeHash(localBoardId)
+      const cloudHash = contentHashes[localBoardId] || ''
+      if (localHash && cloudHash && localHash === cloudHash) {
+        const newLoaded = new Set(get().loadedBoards); newLoaded.add(localBoardId)
+        set({ loadedBoards: newLoaded })
+        return
+      }
+    }
+
+    // Need to fetch from cloud
+    try {
+      const res = await fetch(`/api/boards/sync/${localBoardId}`)
+      if (!res.ok) return // board may not exist in cloud yet (new local board)
+
+      const { board, permission } = await res.json()
+      const perm = permission || boardPermissions[localBoardId] || 'owner'
+
+      applyCloudData(localBoardId, board, { skipTheme: perm !== 'owner' })
+
+      const cloudEntry = board.contentHash
+      const newLoaded = new Set(get().loadedBoards); newLoaded.add(localBoardId)
+      const newStale = new Set(get().staleBoards); newStale.delete(localBoardId)
+      set(s => ({
+        boardPermissions: { ...s.boardPermissions, [localBoardId]: perm },
+        contentHashes: { ...s.contentHashes, [localBoardId]: cloudEntry || '' },
+        loadedBoards: newLoaded,
+        staleBoards: newStale,
+      }))
+    } catch {
+      // Silent — board may not be synced to cloud yet
+    }
+  },
+
+  /* ══════════════ Initial load — metadata + CURRENT board only ══════════════ */
+
   loadAllCloudBoards: async () => {
     if (get().hasLoadedFromCloud || get().isInitialLoading) return
 
     set({ isInitialLoading: true, error: null })
 
     try {
-      // Step 1: Lightweight check — only fetches boardId + contentHash (~50 bytes each)
       const checkRes = await fetch('/api/boards/sync/check')
-      if (!checkRes.ok) {
-        set({ isInitialLoading: false, hasLoadedFromCloud: true })
-        return
-      }
+      if (!checkRes.ok) { set({ isInitialLoading: false, hasLoadedFromCloud: true }); return }
 
       const { boards: cloudHashes } = await checkRes.json()
       if (!cloudHashes || cloudHashes.length === 0) {
@@ -680,85 +451,63 @@ export const useBoardSyncStore = create<BoardSyncStore>()((set, get) => ({
         return
       }
 
-      // Step 2: Compare hashes — figure out which boards actually need fetching
-      const boardsToFetch: string[] = []
-      const knownHashes = get().contentHashes
-
-      for (const entry of cloudHashes) {
-        const localBoardId = entry.localBoardId
-        if (!localBoardId) continue
-
-        // Skip boards that were deliberately deleted
-        if (get().deletedBoardIds.has(localBoardId)) continue
-
-        const boardStore = useBoardStore.getState()
-        const localBoard = boardStore.boards.find((b: any) => b.id === localBoardId)
-
-        if (!localBoard) {
-          // Board doesn't exist locally — must fetch
-          boardsToFetch.push(localBoardId)
-        } else {
-          // Board exists — compare hashes
-          const localHash = computeHash(localBoardId)
-          const cloudHash = entry.contentHash || ''
-          const lastKnownHash = knownHashes[localBoardId] || ''
-
-          // Fetch if: cloud hash differs from our last-known cloud hash,
-          // AND cloud hash differs from current local content
-          if (cloudHash && cloudHash !== localHash && cloudHash !== lastKnownHash) {
-            boardsToFetch.push(localBoardId)
-          }
-        }
-      }
-
-      // Track permissions from check API for ALL boards (including non-fetched ones)
+      // ── Track permissions + sharedBy for ALL boards from metadata ──
       const newPermissions = { ...get().boardPermissions }
+      const newSharedBy = { ...get().boardSharedBy }
       for (const entry of cloudHashes) {
         if (entry.localBoardId) {
           newPermissions[entry.localBoardId] = entry.permission || 'owner'
+          if (entry.sharedBy) newSharedBy[entry.localBoardId] = entry.sharedBy
         }
       }
-      set({ boardPermissions: newPermissions })
+      set({ boardPermissions: newPermissions, boardSharedBy: newSharedBy })
 
-      // ── Purge local boards whose cloud access was revoked or deleted ──
-      // Any board with a stored non-owner permission that no longer appears
-      // in the cloud list should be removed locally.
+      // ── Purge revoked boards ──
       const cloudBoardIds = new Set(cloudHashes.map((h: any) => h.localBoardId).filter(Boolean))
       const prevPermissions = get().boardPermissions
       for (const [boardId, perm] of Object.entries(prevPermissions)) {
-        if (perm === 'owner') continue // owner boards are managed separately
+        if (perm === 'owner') continue
         if (!cloudBoardIds.has(boardId)) {
-          // Access revoked or board deleted — purge local copy
           purgeLocalBoard(boardId)
-          // Clean up permission + sync metadata
-          const perms = { ...get().boardPermissions }
-          delete perms[boardId]
-          const hashes = { ...get().contentHashes }
-          delete hashes[boardId]
+          const perms = { ...get().boardPermissions }; delete perms[boardId]
+          const hashes = { ...get().contentHashes }; delete hashes[boardId]
           set({ boardPermissions: perms, contentHashes: hashes })
         }
       }
 
-      if (boardsToFetch.length === 0) {
-        // Everything is up to date — update metadata only
-        const all: CloudBoardMeta[] = cloudHashes.map((h: any) => ({
-          _id: '',
-          localBoardId: h.localBoardId,
-          name: h.name,
-          visibility: 'private',
-          lastSyncedAt: '',
-          createdAt: '',
-          updatedAt: '',
-        }))
-        set({ cloudBoards: all, isInitialLoading: false, hasLoadedFromCloud: true })
-        return
+      // ── Figure out which boards changed (for metadata + stale tracking) ──
+      const knownHashes = get().contentHashes
+      const currentBoardId = useBoardStore.getState().currentBoardId
+      const newStale = new Set<string>()
+      const newHashes = { ...knownHashes }
+      const boardsToAutoCreate: string[] = []  // boards that don't exist locally at all
+
+      for (const entry of cloudHashes) {
+        const localBoardId = entry.localBoardId
+        if (!localBoardId) continue
+        if (get().deletedBoardIds.has(localBoardId)) continue
+
+        const localBoard = useBoardStore.getState().boards.find((b: any) => b.id === localBoardId)
+
+        if (!localBoard) {
+          boardsToAutoCreate.push(localBoardId)
+        } else {
+          const localHash = computeHash(localBoardId)
+          const cloudHash = entry.contentHash || ''
+          const lastKnown = knownHashes[localBoardId] || ''
+
+          if (cloudHash && cloudHash !== localHash && cloudHash !== lastKnown) {
+            newStale.add(localBoardId)
+          } else if (cloudHash) {
+            newHashes[localBoardId] = cloudHash
+          }
+        }
       }
 
-      // Step 3: Fetch ONLY the boards that changed (one request each)
+      // ── Auto-load boards that don't exist locally (new device) ──
       let loadedCount = 0
-      const newHashes = { ...get().contentHashes }
 
-      for (const localBoardId of boardsToFetch) {
+      for (const localBoardId of boardsToAutoCreate) {
         try {
           const res = await fetch(`/api/boards/sync/${localBoardId}`)
           if (!res.ok) continue
@@ -769,19 +518,46 @@ export const useBoardSyncStore = create<BoardSyncStore>()((set, get) => ({
           applyCloudData(localBoardId, board, { skipTheme: perm !== 'owner' })
           loadedCount++
 
-          // Store the cloud hash so we don't re-fetch next time
           const cloudEntry = cloudHashes.find((h: any) => h.localBoardId === localBoardId)
-          if (cloudEntry?.contentHash) {
-            newHashes[localBoardId] = cloudEntry.contentHash
-          }
+          if (cloudEntry?.contentHash) newHashes[localBoardId] = cloudEntry.contentHash
+
+          // Mark as loaded
+          const newLoaded = new Set(get().loadedBoards); newLoaded.add(localBoardId)
+          set({ loadedBoards: newLoaded })
         } catch (err) {
           console.error(`Failed to load board ${localBoardId} from cloud:`, err)
         }
       }
 
-      set({ contentHashes: newHashes, boardPermissions: newPermissions })
+      // ── For existing stale boards: only fetch the CURRENT board right now ──
+      // Other stale boards stay marked — they get fetched via ensureBoardLoaded
+      // when the user actually switches to them.
+      if (currentBoardId && newStale.has(currentBoardId)) {
+        try {
+          const res = await fetch(`/api/boards/sync/${currentBoardId}`)
+          if (res.ok) {
+            const { board, permission } = await res.json()
+            const perm = permission || newPermissions[currentBoardId] || 'owner'
+            newPermissions[currentBoardId] = perm
+            applyCloudData(currentBoardId, board, { skipTheme: perm !== 'owner' })
+            newStale.delete(currentBoardId)
+            const cloudEntry = cloudHashes.find((h: any) => h.localBoardId === currentBoardId)
+            if (cloudEntry?.contentHash) newHashes[currentBoardId] = cloudEntry.contentHash
+            loadedCount++
+          }
+        } catch { /* will show as stale */ }
 
-      // Update cloud boards metadata
+        const newLoaded = new Set(get().loadedBoards); newLoaded.add(currentBoardId)
+        set({ loadedBoards: newLoaded })
+      }
+
+      set({
+        contentHashes: newHashes,
+        boardPermissions: newPermissions,
+        staleBoards: newStale,
+      })
+
+      // Store metadata
       const all: CloudBoardMeta[] = cloudHashes.map((h: any) => ({
         _id: '',
         localBoardId: h.localBoardId,
@@ -791,6 +567,7 @@ export const useBoardSyncStore = create<BoardSyncStore>()((set, get) => ({
         lastSyncedAt: '',
         createdAt: '',
         updatedAt: '',
+        sharedBy: h.sharedBy || null,
       }))
       set({ cloudBoards: all })
 
@@ -799,19 +576,16 @@ export const useBoardSyncStore = create<BoardSyncStore>()((set, get) => ({
         const currentId = useBoardStore.getState().currentBoardId
         const currentUserId = useBoardStore.getState().currentUserId
         if (!currentId && currentUserId) {
-          const userBoards = useBoardStore.getState().boards.filter(
-            (b: any) => b.userId === currentUserId
-          )
-          if (userBoards.length > 0) {
-            useBoardStore.getState().setCurrentBoard(userBoards[0].id)
-          }
+          const { useWorkspaceStore } = await import('./workspaceStore')
+          const ctx = useWorkspaceStore.getState().activeContext
+          const owned = useBoardStore.getState().boards.filter((b: any) => b.userId === currentUserId)
+          const contextBoards = ctx?.type === 'organization'
+            ? owned.filter((b: any) => b.contextType === 'organization' && b.organizationId === ctx.organizationId)
+            : owned.filter((b: any) => !b.contextType || b.contextType === 'personal')
+          if (contextBoards.length > 0) useBoardStore.getState().setCurrentBoard(contextBoards[0].id)
         }
 
-        toast.success(
-          loadedCount === 1
-            ? '1 board synced from cloud'
-            : `${loadedCount} boards synced from cloud`
-        )
+        toast.success(loadedCount === 1 ? '1 board synced from cloud' : `${loadedCount} boards synced from cloud`)
       }
 
       set({ isInitialLoading: false, hasLoadedFromCloud: true })
@@ -821,47 +595,37 @@ export const useBoardSyncStore = create<BoardSyncStore>()((set, get) => ({
     }
   },
 
-  /* ── Mark a board as having unsaved local changes ── */
+  /* ══════════════ Mark dirty ══════════════ */
+
   markDirty: (localBoardId: string) => {
-    const newDirty = new Set(get().dirtyBoards)
-    newDirty.add(localBoardId)
+    const newDirty = new Set(get().dirtyBoards); newDirty.add(localBoardId)
     set({ dirtyBoards: newDirty })
   },
 
-  /* ── Compute local content hash for a board ── */
-  computeLocalHash: (localBoardId: string) => {
-    return computeHash(localBoardId)
-  },
+  computeLocalHash: (localBoardId: string) => computeHash(localBoardId),
 
-  /* ── Push all dirty boards to cloud (debounced caller) ── */
+  /* ══════════════ Push all dirty boards ══════════════ */
+
   syncDirtyBoards: async () => {
     const { dirtyBoards, contentHashes } = get()
     if (dirtyBoards.size === 0) return
 
-    const boardsToSync = Array.from(dirtyBoards)
-
-    for (const localBoardId of boardsToSync) {
-      // Recompute hash — only sync if actually different from cloud
+    for (const localBoardId of Array.from(dirtyBoards)) {
       const localHash = computeHash(localBoardId)
       const cloudHash = contentHashes[localBoardId] || ''
 
       if (localHash === cloudHash) {
-        // Hash matches cloud — just remove dirty flag, no network call
-        const newDirty = new Set(get().dirtyBoards)
-        newDirty.delete(localBoardId)
+        const newDirty = new Set(get().dirtyBoards); newDirty.delete(localBoardId)
         set({ dirtyBoards: newDirty })
         continue
       }
 
-      // Hash differs — actually push to cloud
       await get().syncBoardToCloud(localBoardId)
     }
   },
 
-  /* ── Check for stale boards (login + tab-focus, lightweight) ── */
-  /* Hits /sync/check (~50 bytes/board). For boards that don't exist locally     */
-  /* (new device), auto-loads them. For existing boards with changes, marks them  */
-  /* stale and shows a banner so the user can refresh when ready.                */
+  /* ══════════════ Stale check (tab-focus, lightweight) ══════════════ */
+
   checkForStaleBoards: async () => {
     if (get().isSyncing || get().isInitialLoading) return
 
@@ -874,40 +638,29 @@ export const useBoardSyncStore = create<BoardSyncStore>()((set, get) => ({
 
       const currentHashes = get().contentHashes
       const newStale = new Set(get().staleBoards)
-      const boardsToAutoLoad: string[] = []  // boards that don't exist locally at all
+      const boardsToAutoLoad: string[] = []
+      const currentBoardId = useBoardStore.getState().currentBoardId
 
       for (const entry of cloudEntries) {
         const { localBoardId, contentHash: cloudHash } = entry
         if (!localBoardId || !cloudHash) continue
-
-        // Skip boards that were deliberately deleted
         if (get().deletedBoardIds.has(localBoardId)) continue
-
-        // Skip boards with pending local changes (local wins)
         if (get().dirtyBoards.has(localBoardId)) continue
 
-        const boardStore = useBoardStore.getState()
-        const localBoard = boardStore.boards.find((b: any) => b.id === localBoardId)
+        const localBoard = useBoardStore.getState().boards.find((b: any) => b.id === localBoardId)
 
         if (!localBoard) {
-          // Board doesn't exist locally (new device) — auto-load silently
           boardsToAutoLoad.push(localBoardId)
           continue
         }
 
-        const lastKnownCloudHash = currentHashes[localBoardId] || ''
-
-        // Cloud hash changed since we last synced
-        if (cloudHash !== lastKnownCloudHash) {
-          // Board exists — double-check local content doesn't already match
+        const lastKnown = currentHashes[localBoardId] || ''
+        if (cloudHash !== lastKnown) {
           const localHash = computeHash(localBoardId)
           if (localHash !== cloudHash) {
             newStale.add(localBoardId)
           } else {
-            // Already matches — update hash silently
-            set(s => ({
-              contentHashes: { ...s.contentHashes, [localBoardId]: cloudHash },
-            }))
+            set(s => ({ contentHashes: { ...s.contentHashes, [localBoardId]: cloudHash } }))
           }
         }
       }
@@ -916,22 +669,26 @@ export const useBoardSyncStore = create<BoardSyncStore>()((set, get) => ({
         set({ staleBoards: newStale })
       }
 
-      // ── Purge local boards whose cloud access was revoked or deleted ──
+      // ── Keep boardSharedBy in sync ──
+      const updatedSharedBy: Record<string, { name: string; email: string }> = { ...get().boardSharedBy }
+      for (const entry of cloudEntries) {
+        if (entry.sharedBy) updatedSharedBy[entry.localBoardId] = entry.sharedBy
+      }
+      set({ boardSharedBy: updatedSharedBy })
+
+      // ── Purge boards with revoked access ──
       const cloudBoardIds = new Set(cloudEntries.map((h: any) => h.localBoardId).filter(Boolean))
-      const prevPerms = get().boardPermissions
-      for (const [boardId, perm] of Object.entries(prevPerms)) {
+      for (const [boardId, perm] of Object.entries(get().boardPermissions)) {
         if (perm === 'owner') continue
         if (!cloudBoardIds.has(boardId)) {
           purgeLocalBoard(boardId)
-          const perms = { ...get().boardPermissions }
-          delete perms[boardId]
-          const hashes = { ...get().contentHashes }
-          delete hashes[boardId]
+          const perms = { ...get().boardPermissions }; delete perms[boardId]
+          const hashes = { ...get().contentHashes }; delete hashes[boardId]
           set({ boardPermissions: perms, contentHashes: hashes })
         }
       }
 
-      // Auto-load boards that don't exist locally (new device scenario)
+      // ── Auto-load boards that don't exist locally ──
       if (boardsToAutoLoad.length > 0) {
         const newHashes = { ...get().contentHashes }
         let loadedCount = 0
@@ -948,8 +705,12 @@ export const useBoardSyncStore = create<BoardSyncStore>()((set, get) => ({
             loadedCount++
 
             const cloudEntry = cloudEntries.find((h: any) => h.localBoardId === localBoardId)
-            if (cloudEntry?.contentHash) {
-              newHashes[localBoardId] = cloudEntry.contentHash
+            if (cloudEntry?.contentHash) newHashes[localBoardId] = cloudEntry.contentHash
+
+            // Mark loaded if it's the current board
+            if (localBoardId === currentBoardId) {
+              const newLoaded = new Set(get().loadedBoards); newLoaded.add(localBoardId)
+              set({ loadedBoards: newLoaded })
             }
           } catch (err) {
             console.error(`Auto-load: failed to load board ${localBoardId}:`, err)
@@ -958,152 +719,185 @@ export const useBoardSyncStore = create<BoardSyncStore>()((set, get) => ({
 
         set({ contentHashes: newHashes })
 
-        // Select first board if none selected
         if (loadedCount > 0) {
           const currentId = useBoardStore.getState().currentBoardId
           const currentUserId = useBoardStore.getState().currentUserId
           if (!currentId && currentUserId) {
-            const userBoards = useBoardStore.getState().boards.filter(
-              (b: any) => b.userId === currentUserId
-            )
-            if (userBoards.length > 0) {
-              useBoardStore.getState().setCurrentBoard(userBoards[0].id)
-            }
+            const { useWorkspaceStore } = await import('./workspaceStore')
+            const ctx = useWorkspaceStore.getState().activeContext
+            const owned = useBoardStore.getState().boards.filter((b: any) => b.userId === currentUserId)
+            const contextBoards = ctx?.type === 'organization'
+              ? owned.filter((b: any) => b.contextType === 'organization' && b.organizationId === ctx.organizationId)
+              : owned.filter((b: any) => !b.contextType || b.contextType === 'personal')
+            if (contextBoards.length > 0) useBoardStore.getState().setCurrentBoard(contextBoards[0].id)
           }
-
-          toast.success(
-            loadedCount === 1
-              ? '1 board loaded from cloud'
-              : `${loadedCount} boards loaded from cloud`
-          )
+          toast.success(loadedCount === 1 ? '1 board loaded from cloud' : `${loadedCount} boards loaded from cloud`)
         }
+      }
+
+      // ── Auto-refresh the CURRENT board if it's stale ──
+      // The user sees whichever board they're on immediately, while other
+      // stale boards get refreshed lazily when the user switches to them.
+      if (currentBoardId && newStale.has(currentBoardId)) {
+        try {
+          const boardRes = await fetch(`/api/boards/sync/${currentBoardId}`)
+          if (boardRes.ok) {
+            const { board, permission } = await boardRes.json()
+            const perm = permission || get().boardPermissions[currentBoardId] || 'owner'
+            set(s => ({ boardPermissions: { ...s.boardPermissions, [currentBoardId]: perm } }))
+            applyCloudData(currentBoardId, board, { skipTheme: perm !== 'owner' })
+
+            const updated = new Set(get().staleBoards); updated.delete(currentBoardId)
+            const cloudEntry = cloudEntries.find((h: any) => h.localBoardId === currentBoardId)
+            const newHashes = { ...get().contentHashes }
+            if (cloudEntry?.contentHash) newHashes[currentBoardId] = cloudEntry.contentHash
+            const newLoaded = new Set(get().loadedBoards); newLoaded.add(currentBoardId)
+            set({ staleBoards: updated, contentHashes: newHashes, loadedBoards: newLoaded })
+          }
+        } catch { /* will stay stale — user can manual refresh */ }
       }
     } catch {
       // Silent — check failures shouldn't interrupt the user
     }
   },
 
-  /* ── Refresh stale boards (user-triggered) ── */
+  /* ══════════════ Refresh stale boards — ONLY current board ══════════════ */
+
   refreshStaleBoards: async () => {
     const { staleBoards } = get()
     if (staleBoards.size === 0) return
 
-    set({ isSyncing: true })
-
-    const boardsToFetch = Array.from(staleBoards)
-    const newHashes = { ...get().contentHashes }
-    let updatedCount = 0
-
-    for (const localBoardId of boardsToFetch) {
-      try {
-        const res = await fetch(`/api/boards/sync/${localBoardId}`)
-        if (!res.ok) continue
-
-        const { board, permission } = await res.json()
-        const perm = permission || get().boardPermissions[localBoardId] || 'owner'
-        set(s => ({ boardPermissions: { ...s.boardPermissions, [localBoardId]: perm } }))
-        applyCloudData(localBoardId, board, { skipTheme: perm !== 'owner' })
-        updatedCount++
-
-        if (board.contentHash) {
-          newHashes[localBoardId] = board.contentHash
-        }
-      } catch (err) {
-        console.error(`Refresh: failed to load board ${localBoardId}:`, err)
-      }
+    // Only fetch the board the user is currently viewing
+    const currentBoardId = useBoardStore.getState().currentBoardId
+    if (!currentBoardId || !staleBoards.has(currentBoardId)) {
+      // Nothing stale for current board — other stale boards refresh
+      // lazily via ensureBoardLoaded when the user switches to them
+      return
     }
 
-    set({
-      isSyncing: false,
-      staleBoards: new Set<string>(),
-      contentHashes: newHashes,
-    })
+    set({ isSyncing: true })
 
-    if (updatedCount > 0) {
-      toast.success(
-        updatedCount === 1
-          ? 'Board updated from cloud'
-          : `${updatedCount} boards updated from cloud`
-      )
+    try {
+      const res = await fetch(`/api/boards/sync/${currentBoardId}`)
+      if (!res.ok) throw new Error('Failed to refresh')
+
+      const { board, permission } = await res.json()
+      const perm = permission || get().boardPermissions[currentBoardId] || 'owner'
+      set(s => ({ boardPermissions: { ...s.boardPermissions, [currentBoardId]: perm } }))
+      applyCloudData(currentBoardId, board, { skipTheme: perm !== 'owner' })
+
+      const newStale = new Set(get().staleBoards); newStale.delete(currentBoardId)
+      const newLoaded = new Set(get().loadedBoards); newLoaded.add(currentBoardId)
+      set(s => ({
+        isSyncing: false,
+        staleBoards: newStale,
+        loadedBoards: newLoaded,
+        contentHashes: { ...s.contentHashes, [currentBoardId]: board.contentHash || '' },
+      }))
+      toast.success('Board updated from cloud')
+    } catch (err: any) {
+      set({ isSyncing: false })
+      console.error(`Refresh failed for ${currentBoardId}:`, err)
+      toast.error('Failed to update board')
     }
   },
 
-  /* ── Dismiss stale notification for a board ── */
   dismissStale: (localBoardId: string) => {
-    const newStale = new Set(get().staleBoards)
-    newStale.delete(localBoardId)
+    const newStale = new Set(get().staleBoards); newStale.delete(localBoardId)
     set({ staleBoards: newStale })
   },
 
-  /* ── Sharing ── */
-  getShareSettings: async (localBoardId: string) => {
-    try {
-      const res = await fetch(`/api/boards/sync/${localBoardId}/share`)
-      if (!res.ok) return null
-      return await res.json()
-    } catch {
-      return null
-    }
-  },
+  /* ══════════════ Merge conflict resolution ══════════════ */
 
-  updateVisibility: async (localBoardId, visibility) => {
-    try {
-      const res = await fetch(`/api/boards/sync/${localBoardId}/share`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ visibility }),
-      })
-      if (!res.ok) throw new Error('Failed to update visibility')
-      const data = await res.json()
-      toast.success(`Board is now ${visibility}`)
-      return data
-    } catch (error: any) {
-      toast.error(error.message)
-    }
-  },
+  resolveConflicts: async (resolutions: Record<string, 'local' | 'cloud' | 'both'>) => {
+    const ms = get().mergeState
+    if (!ms) return
 
-  addShareUser: async (localBoardId, email, permission) => {
+    set({ isSyncing: true })
+
     try {
-      const res = await fetch(`/api/boards/sync/${localBoardId}/share`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ addEmail: email, permission }),
-      })
-      if (!res.ok) {
-        const err = await res.json()
-        throw new Error(err.error || 'Failed to share')
+      const isFullBoardChoice = ms.conflicts.length === 1 && ms.conflicts[0].itemId === '_board'
+      let resolved: any
+
+      if (isFullBoardChoice) {
+        const choice = resolutions['_board:_board']
+        resolved = choice === 'local' ? ms.local : ms.cloud
+      } else {
+        resolved = applyConflictResolutions(ms.merged, resolutions, ms.conflicts)
       }
-      toast.success(`Shared with ${email}`)
+
+      const workspacePayload = await resolveWorkspacePayload()
+
+      const res = await fetch('/api/boards/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          localBoardId: ms.localBoardId,
+          name: ms.boardName,
+          board: resolved,
+          baseHash: ms.cloudHash,
+          ...workspacePayload,
+        }),
+      })
+
+      if (!res.ok) { const err = await res.json(); throw new Error(err.error || 'Failed to sync resolved board') }
+
+      applyCloudData(ms.localBoardId, { ...resolved, name: ms.boardName }, {
+        skipTheme: get().boardPermissions[ms.localBoardId] !== 'owner',
+      })
+      setBaseSnapshot(ms.localBoardId, resolved)
+
+      const data = await res.json()
+      const newDirty = new Set(get().dirtyBoards); newDirty.delete(ms.localBoardId)
+      set(s => ({
+        isSyncing: false,
+        mergeState: null,
+        lastSyncedAt: { ...s.lastSyncedAt, [ms.localBoardId]: new Date(data.lastSyncedAt) },
+        contentHashes: { ...s.contentHashes, [ms.localBoardId]: data.contentHash || '' },
+        dirtyBoards: newDirty,
+      }))
+      toast.success('Conflicts resolved — board synced!')
     } catch (error: any) {
-      toast.error(error.message)
+      set({ isSyncing: false })
+      toast.error(`Resolve failed: ${error.message}`)
     }
   },
 
-  removeShareUser: async (localBoardId, userId) => {
-    try {
-      await fetch(`/api/boards/sync/${localBoardId}/share`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ removeUserId: userId }),
-      })
-      toast.success('User removed from shared list')
-    } catch (error: any) {
-      toast.error(error.message)
-    }
-  },
+  dismissMerge: () => { set({ mergeState: null }) },
 
-  updateSharePermission: async (localBoardId, userId, permission) => {
-    try {
-      await fetch(`/api/boards/sync/${localBoardId}/share`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ updatePermission: { userId, permission } }),
-      })
-      toast.success('Permission updated')
-    } catch (error: any) {
-      toast.error(error.message)
-    }
-  },
+  /* ══════════════ Share (delegates to boardShareApi.ts) ══════════════ */
+
+  getShareSettings: (localBoardId) => _getShareSettings(localBoardId),
+  updateVisibility: (localBoardId, visibility) => _updateVisibility(localBoardId, visibility),
+  addShareUser: (localBoardId, email, permission) => _addShareUser(localBoardId, email, permission),
+  removeShareUser: (localBoardId, userId) => _removeShareUser(localBoardId, userId),
+  updateSharePermission: (localBoardId, userId, permission) => _updateSharePermission(localBoardId, userId, permission),
+}),
+{
+  name: 'board-sync-storage',
+  partialize: (state) => ({
+    lastSyncedAt: Object.fromEntries(
+      Object.entries(state.lastSyncedAt).map(([k, v]) => [k, v instanceof Date ? v.toISOString() : v])
+    ),
+    boardPermissions: state.boardPermissions,
+    boardSharedBy: state.boardSharedBy,
+    contentHashes: state.contentHashes,
+    deletedBoardIds: Array.from(state.deletedBoardIds),
+  }),
+  merge: (persisted: any, current) => ({
+    ...current,
+    ...(persisted ? {
+      lastSyncedAt: persisted.lastSyncedAt
+        ? Object.fromEntries(
+            Object.entries(persisted.lastSyncedAt).map(([k, v]) => [k, new Date(v as string)])
+          )
+        : {},
+      boardPermissions: persisted.boardPermissions || {},
+      boardSharedBy: persisted.boardSharedBy || {},
+      contentHashes: persisted.contentHashes || {},
+      deletedBoardIds: new Set<string>(persisted.deletedBoardIds || []),
+    } : {}),
+  }),
 }))
 
 /* ── Export helper for sendBeacon on page close ── */
@@ -1115,9 +909,5 @@ export function gatherBoardDataForBeacon(localBoardId: string) {
   const data = gatherBoardData(localBoardId)
   if (!data) return null
 
-  return {
-    localBoardId,
-    name: board.name,
-    board: data,
-  }
+  return { localBoardId, name: board.name, board: data }
 }

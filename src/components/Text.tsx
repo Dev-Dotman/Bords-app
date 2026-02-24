@@ -12,6 +12,7 @@ import { useConnectionStore } from '../store/connectionStore'
 import { useZIndexStore } from '../store/zIndexStore'
 import { useViewportScale } from '../hooks/useViewportScale'
 import { ColorPicker } from './ColorPicker'
+import { useIsViewOnly } from '@/lib/useIsViewOnly'
 
 export function Text({ id, text, position, fontSize, color, rotation = 0, width = 200 }: TextElement & { rotation?: number }) {
   const [isEditing, setIsEditing] = useState(false)
@@ -28,8 +29,10 @@ export function Text({ id, text, position, fontSize, color, rotation = 0, width 
   const isDark = useThemeStore((state) => state.isDark)
   const { removeConnectionsByItemId } = useConnectionStore()
   const vScale = useViewportScale()
+  const isViewOnly = useIsViewOnly()
 
   const handleResizeStop = (_e: any, _dir: any, _ref: any, d: any) => {
+    if (isViewOnly) return
     updateText(id, { width: width + Math.round(d.width / vScale) })
   }
 
@@ -106,7 +109,7 @@ export function Text({ id, text, position, fontSize, color, rotation = 0, width 
         minWidth={80 * vScale}
         enable={{
           top: false,
-          right: !isDragging,
+          right: !isDragging && !isViewOnly,
           bottom: false,
           left: false,
           topRight: false,
@@ -174,7 +177,7 @@ export function Text({ id, text, position, fontSize, color, rotation = 0, width 
             <div 
               onDoubleClick={(e) => {
                 e.stopPropagation();
-                setIsEditing(true);
+                if (!isViewOnly) setIsEditing(true);
               }}
               onClick={(e) => {
                 e.stopPropagation();
@@ -193,7 +196,7 @@ export function Text({ id, text, position, fontSize, color, rotation = 0, width 
         </div>
       </Resizable>
 
-      {isSelected && !isEditing && (
+      {isSelected && !isEditing && !isViewOnly && (
           <div
             className="absolute -top-14 left-1/2 -translate-x-1/2 flex items-center gap-1 bg-white/90 backdrop-blur-md rounded-full shadow-lg border border-black/10 p-1.5 touch-action-bar"
             data-text-id={id}
